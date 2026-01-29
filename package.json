@@ -1,0 +1,80 @@
+{
+  "name": "wispy-ai",
+  "version": "0.6.1",
+  "description": "Autonomous AI agent with Marathon Mode — multi-day task execution powered by Gemini 3, multi-agent orchestration, 27+ integrations, MCP server",
+  "type": "module",
+  "bin": {
+    "wispy-ai": "./bin/wispy.js",
+    "wispy": "./bin/wispy.js"
+  },
+  "main": "./dist/cli/program.js",
+  "files": [
+    "bin/",
+    "dist/",
+    "wispy/",
+    ".env.example",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli/program.ts gateway",
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/cli/program.js gateway",
+    "doctor": "tsx src/cli/program.ts doctor",
+    "postinstall": "node ./dist/cli/postinstall.js 2>/dev/null || true"
+  },
+  "keywords": [
+    "ai", "agent", "gemini", "gemini-3", "autonomous", "cli", "multi-agent",
+    "marathon", "long-running", "thinking", "voice", "mcp", "integrations",
+    "google", "wispy", "action-era", "self-correcting"
+  ],
+  "author": "Brian Mwai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brn-mwai/wispy.git"
+  },
+  "homepage": "https://github.com/brn-mwai/wispy#readme",
+  "bugs": {
+    "url": "https://github.com/brn-mwai/wispy/issues"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "ajv": "^8.17.0",
+    "better-sqlite3": "^11.7.0",
+    "chalk": "^5.6.2",
+    "chokidar": "^4.0.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "croner": "^9.0.0",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.13.0",
+    "express": "^4.21.0",
+    "grammy": "^1.35.0",
+    "json5": "^2.2.0",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
+    "nanoid": "^5.0.0",
+    "ora": "^9.1.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "tweetnacl": "^1.0.3",
+    "ws": "^8.18.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
