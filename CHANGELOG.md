@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.2] - 2026-01-29
+
+### Added
+- **Web Dashboard for Marathon Monitoring**
+  - Real-time progress visualization with animated progress bars
+  - Live activity logs showing agent actions
+  - Token and cost tracking display
+  - Artifact viewer showing created files
+  - Pause/Abort controls from the browser
+  - Marathon history view
+  - Auto-refresh every 5 seconds
+  - Dark theme modern UI
+  - Access at `http://localhost:4001/dashboard`
+
+- **WhatsApp Integration via Baileys**
+  - QR code pairing in terminal
+  - Full Marathon command support with `!` prefix
+  - `!marathon <goal>` - Start autonomous task
+  - `!status` - Check progress
+  - `!pause` / `!resume` / `!abort` - Control execution
+  - `!list` - View all marathons
+  - `!help` - Show help
+  - Real-time notifications to WhatsApp
+  - Auto-pairing on first message
+
+- **Browser Control via CDP (Chrome DevTools Protocol)**
+  - `browser_navigate` - Open URLs
+  - `browser_click` - Click elements by selector
+  - `browser_type` - Fill input fields
+  - `browser_screenshot` - Capture screenshots
+  - `browser_snapshot` - Get page content + screenshot for AI analysis
+  - `browser_scroll` - Scroll pages
+  - `browser_tabs` - List open tabs
+  - `browser_new_tab` / `browser_close_tab` - Manage tabs
+  - `browser_press_key` - Send keyboard input
+  - Based on playwright-core for reliable automation
+
+### Changed
+- Gateway startup now shows Dashboard URL
+- Gateway startup shows Telegram and WhatsApp status
+- REST adapter now accepts runtimeDir for Marathon service access
+- Comprehensive README with all new features documented
+- Updated API health check version to 0.6.2
+
+### Dependencies
+- Added `playwright-core` for browser automation
+- Added `qrcode-terminal` for WhatsApp QR display
+- Added `@hapi/boom` for Baileys error handling
+
+---
+
 ## [0.6.1] - 2026-01-29
 
 ### Added
@@ -261,6 +312,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlight |
 |---------|------|-----------|
+| 0.6.2 | 2026-01-29 | Web Dashboard, WhatsApp, Browser Control |
 | 0.6.1 | 2026-01-29 | Full Telegram integration with Marathon |
 | 0.6.0 | 2026-01-29 | Marathon Agent Mode (autonomous multi-day tasks) |
 | 0.5.1 | 2026-01-29 | SQLite migration fix |

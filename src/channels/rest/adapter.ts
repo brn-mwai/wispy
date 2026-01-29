@@ -4,10 +4,12 @@ import type { Agent } from "../../core/agent.js";
 import type { WispyConfig } from "../../config/schema.js";
 import { sanitizeOutput } from "../../security/api-key-guard.js";
 import { createLogger } from "../../infra/logger.js";
+import { MarathonService } from "../../marathon/service.js";
+import { createDashboardRouter } from "../../web/dashboard.js";
 
 const log = createLogger("rest");
 
-export function startRestApi(port: number, agent: Agent, config: WispyConfig) {
+export function startRestApi(port: number, agent: Agent, config: WispyConfig, runtimeDir?: string) {
   const app = express();
   app.use(express.json());
 
@@ -26,7 +28,7 @@ export function startRestApi(port: number, agent: Agent, config: WispyConfig) {
 
   // Health check
   app.get("/api/v1/health", (_req, res) => {
-    res.json({ status: "ok", agent: "wispy", version: "0.1.0" });
+    res.json({ status: "ok", agent: "wispy", version: "0.6.2" });
   });
 
   // Chat endpoint
@@ -84,6 +86,14 @@ export function startRestApi(port: number, agent: Agent, config: WispyConfig) {
       res.end();
     }
   });
+
+  // Mount Marathon Dashboard (if runtimeDir provided)
+  if (runtimeDir) {
+    const marathonService = new MarathonService(runtimeDir);
+    const dashboardRouter = createDashboardRouter(marathonService);
+    app.use("/dashboard", dashboardRouter);
+    log.info("Dashboard available at http://localhost:%d/dashboard", port);
+  }
 
   app.listen(port, () => {
     log.info("REST API listening on port %d", port);

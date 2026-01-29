@@ -139,11 +139,11 @@ export async function startGateway(opts: GatewayOpts) {
     }
   });
 
-  // Start REST API
+  // Start REST API with Dashboard
   const restPort = config.channels.rest?.port || 4001;
   if (config.channels.rest?.enabled !== false) {
     const { startRestApi } = await import("../channels/rest/adapter.js");
-    startRestApi(restPort, agent, config);
+    startRestApi(restPort, agent, config, runtimeDir);
   }
 
   // Start Telegram (with apiKey for Marathon support)
@@ -152,12 +152,21 @@ export async function startGateway(opts: GatewayOpts) {
     startTelegram(config.channels.telegram.token, agent, runtimeDir, apiKey);
   }
 
+  // Start WhatsApp (with apiKey for Marathon support)
+  if (config.channels.whatsapp?.enabled) {
+    const { startWhatsApp } = await import("../channels/whatsapp/adapter.js");
+    await startWhatsApp(agent, runtimeDir, apiKey);
+  }
+
   // Start A2A server
   const a2aPort = 4002;
   const a2aServer = new A2AServer(runtimeDir, soulDir, config.agent.name, agent);
   a2aServer.start(a2aPort);
 
   // Print startup summary
+  const telegramStatus = config.channels.telegram?.enabled ? "enabled" : "disabled";
+  const whatsappStatus = config.channels.whatsapp?.enabled ? "enabled" : "disabled";
+
   console.log(`
   ☁️👀  Wispy Gateway Running!
 
@@ -165,11 +174,14 @@ export async function startGateway(opts: GatewayOpts) {
   Agent:      ${config.agent.name}
   WebSocket:  ws://localhost:${wsPort}
   REST API:   http://localhost:${restPort}
+  Dashboard:  http://localhost:${restPort}/dashboard
   A2A:        http://localhost:${a2aPort}/a2a/card
   Skills:     ${skills.length} loaded
   MCP:        ${mcpStatus.length} server(s)
   Memory:     Heartbeat every ${config.memory.heartbeatIntervalMinutes} min
   Wallet:     ${config.wallet?.enabled ? "enabled" : "disabled"}
+  Telegram:   ${telegramStatus}
+  WhatsApp:   ${whatsappStatus}
   `);
 
   // Handle shutdown
