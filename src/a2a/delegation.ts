@@ -2,7 +2,7 @@ import express from "express";
 import {
   createA2AMessage,
   verifyA2AMessage,
-  type A2AMessage,
+  type LegacyA2AMessage,
   type TaskRequest,
   type TaskResponse,
   type CapabilityResponse,
@@ -43,7 +43,7 @@ export class A2AServer {
   private setupRoutes() {
     // Receive A2A messages
     this.app.post("/a2a/message", async (req, res) => {
-      const message = req.body as A2AMessage;
+      const message = req.body as LegacyA2AMessage;
 
       // Verify signature
       if (!verifyA2AMessage(message)) {
@@ -123,7 +123,7 @@ export class A2AServer {
     };
   }
 
-  private createResponse(type: A2AMessage["type"], payload: unknown): A2AMessage {
+  private createResponse(type: LegacyA2AMessage["type"], payload: unknown): LegacyA2AMessage {
     return createA2AMessage(
       this.identity,
       this.agentName,
@@ -175,7 +175,7 @@ export class A2AServer {
         return null;
       }
 
-      const responseMsg = (await res.json()) as A2AMessage;
+      const responseMsg = (await res.json()) as LegacyA2AMessage;
       return responseMsg.payload as TaskResponse;
     } catch (err) {
       log.error({ err }, "Failed to delegate task to %s", peer.name);
