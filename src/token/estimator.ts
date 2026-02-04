@@ -86,6 +86,11 @@ export interface TokenBudget {
   maxTokensPerSession: number;
   maxTokensPerDay: number;
   warnAtPercentage: number;
+  /** SPENDING LIMITS - solves surprise billing complaints */
+  maxCostPerSessionUsd: number;
+  maxCostPerDayUsd: number;
+  /** If true, block requests that exceed budget. If false, just warn. */
+  enforceHardLimits: boolean;
 }
 
 const DEFAULT_BUDGET: TokenBudget = {
@@ -93,7 +98,31 @@ const DEFAULT_BUDGET: TokenBudget = {
   maxTokensPerSession: 500_000,
   maxTokensPerDay: 2_000_000,
   warnAtPercentage: 80,
+  // Spending limits - prevent surprise bills
+  maxCostPerSessionUsd: 5.00,   // $5 per session
+  maxCostPerDayUsd: 25.00,      // $25 per day
+  enforceHardLimits: true,      // Block requests that exceed budget
 };
+
+/**
+ * Error thrown when spending limits are exceeded
+ */
+export class SpendingLimitError extends Error {
+  public readonly currentCost: number;
+  public readonly limit: number;
+  public readonly limitType: 'session' | 'daily';
+
+  constructor(currentCost: number, limit: number, limitType: 'session' | 'daily') {
+    super(
+      `Spending limit exceeded: $${currentCost.toFixed(2)} / $${limit.toFixed(2)} (${limitType}). ` +
+      `Increase your budget or start a new ${limitType === 'session' ? 'session' : 'day'}.`
+    );
+    this.name = 'SpendingLimitError';
+    this.currentCost = currentCost;
+    this.limit = limit;
+    this.limitType = limitType;
+  }
+}
 
 export class TokenManager {
   private budget: TokenBudget;
@@ -305,5 +334,102 @@ export class TokenManager {
 
   resetSession(): void {
     this.sessionUsage = [];
+  }
+
+  /**
+   * SPENDING LIMIT ENFORCEMENT
+   * Call this BEFORE making API requests to prevent surprise bills.
+   * This solves the #1 billing complaint from Gemini CLI users.
+   *
+   * @throws SpendingLimitError if hard limits are enabled and exceeded
+   * @returns { canProceed: boolean, warning?: string }
+   */
+  checkSpendingLimits(estimatedCostUsd: number): {
+    canProceed: boolean;
+    warning?: string;
+    sessionCost: number;
+    dailyCost: number;
+  } {
+    const sessionCost = this.getSessionCost();
+    const dailyCost = this.getDailyCost();
+
+    const projectedSessionCost = sessionCost + estimatedCostUsd;
+    const projectedDailyCost = dailyCost + estimatedCostUsd;
+
+    // Check session limit
+    if (projectedSessionCost > this.budget.maxCostPerSessionUsd) {
+      if (this.budget.enforceHardLimits) {
+        throw new SpendingLimitError(
+          sessionCost,
+          this.budget.maxCostPerSessionUsd,
+          'session'
+        );
+      }
+      return {
+        canProceed: true,
+        warning: `Session spending limit warning: $${sessionCost.toFixed(2)} / $${this.budget.maxCostPerSessionUsd.toFixed(2)}`,
+        sessionCost,
+        dailyCost,
+      };
+    }
+
+    // Check daily limit
+    if (projectedDailyCost > this.budget.maxCostPerDayUsd) {
+      if (this.budget.enforceHardLimits) {
+        throw new SpendingLimitError(
+          dailyCost,
+          this.budget.maxCostPerDayUsd,
+          'daily'
+        );
+      }
+      return {
+        canProceed: true,
+        warning: `Daily spending limit warning: $${dailyCost.toFixed(2)} / $${this.budget.maxCostPerDayUsd.toFixed(2)}`,
+        sessionCost,
+        dailyCost,
+      };
+    }
+
+    // Check warning threshold
+    const dailyPercentage = (projectedDailyCost / this.budget.maxCostPerDayUsd) * 100;
+    if (dailyPercentage >= this.budget.warnAtPercentage) {
+      return {
+        canProceed: true,
+        warning: `Approaching daily spending limit: ${dailyPercentage.toFixed(0)}% ($${dailyCost.toFixed(2)} / $${this.budget.maxCostPerDayUsd.toFixed(2)})`,
+        sessionCost,
+        dailyCost,
+      };
+    }
+
+    return { canProceed: true, sessionCost, dailyCost };
+  }
+
+  /**
+   * Update budget limits dynamically
+   */
+  updateBudget(newBudget: Partial<TokenBudget>): void {
+    this.budget = { ...this.budget, ...newBudget };
+    log.info(
+      "Budget updated: session=$%s/day, daily=$%s/day, enforce=%s",
+      this.budget.maxCostPerSessionUsd,
+      this.budget.maxCostPerDayUsd,
+      this.budget.enforceHardLimits
+    );
+  }
+
+  /**
+   * Get a summary of current spending for display
+   */
+  getSpendingSummary(): string {
+    const stats = this.getStats();
+    const sessionPct = (stats.sessionCost / this.budget.maxCostPerSessionUsd) * 100;
+    const dailyPct = (stats.dailyCost / this.budget.maxCostPerDayUsd) * 100;
+
+    return [
+      `Session: $${stats.sessionCost.toFixed(2)} / $${this.budget.maxCostPerSessionUsd.toFixed(2)} (${sessionPct.toFixed(0)}%)`,
+      `Daily: $${stats.dailyCost.toFixed(2)} / $${this.budget.maxCostPerDayUsd.toFixed(2)} (${dailyPct.toFixed(0)}%)`,
+      `Requests: ${stats.requestCount}`,
+      `Tokens: ${stats.sessionTokens.toLocaleString()}`,
+    ].join(' | ');
   }
 }

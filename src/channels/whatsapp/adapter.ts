@@ -301,7 +301,7 @@ async function processCommand(
   }
 }
 
-export async function startWhatsApp(agent: Agent, runtimeDir: string, apiKey?: string) {
+export async function startWhatsApp(agent: Agent, runtimeDir: string, apiKey?: string): Promise<WASocket> {
   const authDir = resolve(runtimeDir, "whatsapp-auth");
 
   // Ensure auth directory exists

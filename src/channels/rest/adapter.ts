@@ -28,7 +28,7 @@ export function startRestApi(port: number, agent: Agent, config: WispyConfig, ru
 
   // Health check
   app.get("/api/v1/health", (_req, res) => {
-    res.json({ status: "ok", agent: "wispy", version: "0.6.2" });
+    res.json({ status: "ok", agent: "wispy", version: "0.7.0" });
   });
 
   // Chat endpoint

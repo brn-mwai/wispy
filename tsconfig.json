@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
@@ -20,5 +20,5 @@
     "baseUrl": "."
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "dashboard"]
+  "exclude": ["node_modules", "dist", "dashboard", "src/**/*.test.ts", "src/**/*.spec.ts"]
 }

@@ -151,7 +151,7 @@ export class BrowserController {
 
     try {
       log.info("Navigating to: %s", url);
-      await this.page.goto(url, { waitUntil: "domcontentloaded" });
+      await this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
       const title = await this.page.title();
 
       return {
@@ -159,7 +159,17 @@ export class BrowserController {
         title,
         success: true,
       };
-    } catch (err) {
+    } catch (err: any) {
+      // If page/browser closed, try to reconnect
+      if (err.message?.includes("closed") || err.message?.includes("Target")) {
+        log.warn("Browser connection lost during navigation, attempting to reconnect...");
+        this.connected = false;
+        const reconnected = await this.connect();
+        if (reconnected) {
+          log.info("Browser reconnected, retrying navigation...");
+          return this.navigate(url);
+        }
+      }
       log.error({ err }, "Navigation failed");
       return {
         url,
@@ -228,7 +238,7 @@ export class BrowserController {
   /**
    * Take a screenshot
    */
-  async screenshot(fullPage: boolean = false): Promise<string> {
+  async screenshot(fullPage: boolean = false): Promise<string | null> {
     if (!this.page) {
       throw new Error("Browser not connected");
     }
@@ -237,14 +247,34 @@ export class BrowserController {
       const filename = `screenshot-${Date.now()}.png`;
       const filepath = resolve(this.screenshotDir, filename);
 
+      // Use shorter timeout and skip waiting for animations/fonts
       await this.page.screenshot({
         path: filepath,
         fullPage,
+        timeout: 10000, // Reduced from 30s to 10s
+        animations: "disabled", // Skip CSS animations
       });
 
       log.info("Screenshot saved: %s", filepath);
       return filepath;
-    } catch (err) {
+    } catch (err: any) {
+      // If page/browser closed, try to reconnect
+      if (err.message?.includes("closed") || err.message?.includes("Target")) {
+        log.warn("Browser connection lost, attempting to reconnect...");
+        this.connected = false;
+        const reconnected = await this.connect();
+        if (reconnected) {
+          log.info("Browser reconnected, retrying screenshot...");
+          return this.screenshot(fullPage);
+        }
+      }
+
+      // On timeout, return null instead of throwing - caller can proceed without screenshot
+      if (err.message?.includes("Timeout")) {
+        log.warn("Screenshot timed out, continuing without image");
+        return null;
+      }
+
       log.error({ err }, "Screenshot failed");
       throw err;
     }
@@ -278,6 +308,7 @@ export class BrowserController {
 
   /**
    * Get page snapshot (text + screenshot)
+   * Screenshot is optional - if it fails/times out, we still return content
    */
   async snapshot(): Promise<SnapshotResult> {
     if (!this.page) {
@@ -287,7 +318,15 @@ export class BrowserController {
     const url = this.page.url();
     const title = await this.page.title();
     const content = await this.getPageContent();
-    const imagePath = await this.screenshot();
+
+    // Screenshot is optional - don't block on it
+    let imagePath: string | undefined;
+    try {
+      const result = await this.screenshot();
+      imagePath = result || undefined;
+    } catch {
+      log.warn("Snapshot continuing without screenshot");
+    }
 
     return {
       url,

@@ -72,7 +72,13 @@ export class HeartbeatRunner {
     const agentId = this.config.agent.id;
     const reg = loadRegistry(this.runtimeDir, agentId);
 
+    // Collect all messages to sync, but limit to prevent quota exhaustion
+    const MAX_MESSAGES_PER_HEARTBEAT = 10;
+    let messagesProcessed = 0;
+
     for (const session of Object.values(reg.sessions)) {
+      if (messagesProcessed >= MAX_MESSAGES_PER_HEARTBEAT) break;
+
       const history = loadHistory(this.runtimeDir, agentId, session.sessionKey);
 
       // Index new messages since last sync
@@ -84,6 +90,8 @@ export class HeartbeatRunner {
       log.debug("Syncing %d new messages from %s", newMessages.length, session.sessionKey);
 
       for (const msg of newMessages) {
+        if (messagesProcessed >= MAX_MESSAGES_PER_HEARTBEAT) break;
+
         if (msg.content && msg.content.length > 20) {
           try {
             await this.memoryManager.addMemory(
@@ -91,11 +99,19 @@ export class HeartbeatRunner {
               "session",
               session.sessionKey
             );
+            messagesProcessed++;
+
+            // Add delay between embeddings to avoid rate limits
+            await new Promise(resolve => setTimeout(resolve, 500));
           } catch { /* continue on embedding failure */ }
         }
       }
 
       state.lastSyncMessageIndex = history.length;
+    }
+
+    if (messagesProcessed > 0) {
+      log.info("Synced %d messages to memory", messagesProcessed);
     }
   }
 }

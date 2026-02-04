@@ -14,7 +14,7 @@ export interface ChannelDock {
   name: string;
   type: string;
   capabilities: ChannelCapabilities;
-  status: "connected" | "disconnected" | "error";
+  status: "connected" | "connecting" | "disconnected" | "error";
   connectedAt?: string;
   error?: string;
 }

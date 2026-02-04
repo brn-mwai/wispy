@@ -72,8 +72,8 @@ const DEFAULT_WORKSPACE: WorkspaceConfig = {
     maxChainDepth: 5,
   },
   models: {
-    default: "gemini-2.5-pro",
-    fallback: "gemini-2.5-flash",
+    default: "gemini-3-pro-preview",
+    fallback: "gemini-3-flash-preview",
   },
   voice: {
     enabled: false,
