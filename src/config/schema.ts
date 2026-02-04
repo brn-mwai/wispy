@@ -20,6 +20,12 @@ export interface WispyConfig {
   // Primary provider (Gemini by default)
   gemini: {
     apiKey?: string;
+    // Vertex AI configuration (Google Cloud)
+    vertexai?: {
+      enabled: boolean;
+      project?: string;
+      location?: string; // us-central1, europe-west1, etc.
+    };
     models: {
       pro: string;
       flash: string;
@@ -63,6 +69,7 @@ export interface WispyConfig {
     sandbox?: boolean;
     toolAllowlist?: string[];
     toolDenylist?: string[];
+    autonomousMode?: boolean; // Auto-approve file/code operations
   };
   // Extended thinking (MoltBot-style)
   thinking?: {
@@ -105,6 +112,15 @@ const configSchema = {
       required: ["models"],
       properties: {
         apiKey: { type: "string", nullable: true },
+        vertexai: {
+          type: "object",
+          nullable: true,
+          properties: {
+            enabled: { type: "boolean" },
+            project: { type: "string", nullable: true },
+            location: { type: "string", nullable: true },
+          },
+        },
         models: {
           type: "object",
           required: ["pro", "flash", "image", "embedding"],
@@ -328,6 +344,7 @@ const configSchema = {
         sandbox: { type: "boolean", nullable: true },
         toolAllowlist: { type: "array", nullable: true, items: { type: "string" } },
         toolDenylist: { type: "array", nullable: true, items: { type: "string" } },
+        autonomousMode: { type: "boolean", nullable: true },
       },
     },
     thinking: {

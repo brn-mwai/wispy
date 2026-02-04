@@ -21,6 +21,8 @@ import type { SkillManifest } from "../skills/loader.js";
 import type { ToolDeclaration } from "../ai/tools.js";
 import type { SessionType } from "../security/isolation.js";
 import type { WispyConfig } from "../config/schema.js";
+import type { CronService } from "../cron/service.js";
+import type { ReminderService } from "../cron/reminders.js";
 import { createLogger } from "../infra/logger.js";
 
 const log = createLogger("agent");
@@ -61,6 +63,8 @@ export class Agent {
   private tokenManager: TokenManager;
   private integrationRegistry?: IntegrationRegistry;
   private mcpRegistry?: McpRegistry;
+  private cronService?: CronService;
+  private reminderService?: ReminderService;
   private skills: SkillManifest[] = [];
   private mode: AgentMode = "execute";
   private contextEventCallback?: ContextEventCallback;
@@ -103,6 +107,30 @@ export class Agent {
   }
 
   /**
+   * Attach a cron service for scheduling tasks.
+   */
+  setCronService(cronService: CronService): void {
+    this.cronService = cronService;
+    this.toolExecutor.setCronService(cronService);
+  }
+
+  getCronService(): CronService | undefined {
+    return this.cronService;
+  }
+
+  /**
+   * Attach a reminder service for one-time reminders.
+   */
+  setReminderService(reminderService: ReminderService): void {
+    this.reminderService = reminderService;
+    this.toolExecutor.setReminderService(reminderService);
+  }
+
+  getReminderService(): ReminderService | undefined {
+    return this.reminderService;
+  }
+
+  /**
    * Attach loaded skills so their tools are exposed to Gemini.
    */
   setSkills(skills: SkillManifest[]): void {
@@ -115,6 +143,18 @@ export class Agent {
 
   getMode(): AgentMode {
     return this.mode;
+  }
+
+  /**
+   * Set chat context for image sending (used by Telegram/WhatsApp)
+   */
+  setChatContext(ctx: {
+    channel: string;
+    peerId: string;
+    chatId?: string;
+    sendImage?: (path: string, caption?: string) => Promise<void>;
+  }): void {
+    this.toolExecutor.setChatContext(ctx);
   }
 
   /**
@@ -285,6 +325,18 @@ export class Agent {
     return lines.join("\n");
   }
 
+  // Marathon service reference for NLP
+  private marathonService?: any;
+  private apiKey?: string;
+
+  /**
+   * Set marathon service for NLP-based control
+   */
+  setMarathonService(service: any, apiKey: string): void {
+    this.marathonService = service;
+    this.apiKey = apiKey;
+  }
+
   async chat(
     userMessage: string,
     peerId: string,
@@ -293,6 +345,45 @@ export class Agent {
   ): Promise<AgentResponse> {
     const { config, runtimeDir, soulDir } = this.ctx;
     const agentId = config.agent.id;
+
+    // NLP-based marathon control (natural language interface)
+    if (this.marathonService && this.apiKey) {
+      try {
+        const { handleMarathonNLP, mightBeMarathonRelated } = await import("../marathon/nlp-controller.js");
+
+        // Quick pre-filter to avoid unnecessary processing
+        if (mightBeMarathonRelated(userMessage)) {
+          const nlpResult = await handleMarathonNLP(
+            userMessage,
+            peerId,
+            this.marathonService,
+            this,
+            this.apiKey
+          );
+
+          if (nlpResult.handled && nlpResult.response) {
+            // Save NLP interaction to history
+            const session = getOrCreateSession(runtimeDir, agentId, sessionType, peerId, channel);
+            appendMessage(runtimeDir, agentId, session.sessionKey, {
+              role: "user",
+              content: userMessage,
+              timestamp: new Date().toISOString(),
+              channel,
+              peerId,
+            });
+            appendMessage(runtimeDir, agentId, session.sessionKey, {
+              role: "model",
+              content: nlpResult.response,
+              timestamp: new Date().toISOString(),
+            });
+
+            return { text: nlpResult.response };
+          }
+        }
+      } catch (err) {
+        log.debug("NLP handler error (continuing to normal flow): %s", err);
+      }
+    }
 
     // Get or create session
     const session = getOrCreateSession(runtimeDir, agentId, sessionType, peerId, channel);
