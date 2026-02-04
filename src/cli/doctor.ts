@@ -87,13 +87,49 @@ export async function runDoctor(opts: DoctorOpts) {
   // ═══════════════════════════════════════════════════════════════════════════
   console.log(chalk.bold("  Environment\n"));
 
-  // GEMINI_API_KEY
-  await check({
-    label: "GEMINI_API_KEY environment variable",
-    pass: !!process.env.GEMINI_API_KEY,
-    fixable: false,
-    detail: "Set GEMINI_API_KEY in your environment or .env file",
-  });
+  // Check for Vertex AI configuration
+  let vertexEnabled = false;
+  try {
+    const { loadConfig } = await import("../config/config.js");
+    const config = loadConfig(opts.runtimeDir);
+    vertexEnabled = config.gemini?.vertexai?.enabled || false;
+  } catch { /* config might not exist yet */ }
+
+  if (vertexEnabled) {
+    // Vertex AI mode
+    const gcpProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+    await check({
+      label: "Vertex AI enabled",
+      pass: true,
+      fixable: false,
+      detail: "Using Google Cloud credentials",
+    });
+
+    await check({
+      label: "GOOGLE_CLOUD_PROJECT environment variable",
+      pass: !!gcpProject,
+      fixable: false,
+      detail: "Set GOOGLE_CLOUD_PROJECT or configure project in config.yaml",
+    });
+
+    // Check for gcloud credentials
+    const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    const hasADC = !!adcPath || existsSync(resolve(os.homedir(), ".config/gcloud/application_default_credentials.json"));
+    await check({
+      label: "Google Cloud credentials available",
+      pass: hasADC,
+      fixable: false,
+      detail: "Run: gcloud auth application-default login",
+    });
+  } else {
+    // API key mode
+    await check({
+      label: "GEMINI_API_KEY environment variable",
+      pass: !!process.env.GEMINI_API_KEY,
+      fixable: false,
+      detail: "Set GEMINI_API_KEY in your environment or .env file, or enable Vertex AI",
+    });
+  }
 
   // Optional provider keys
   if (opts.verbose) {
@@ -156,38 +192,85 @@ export async function runDoctor(opts: DoctorOpts) {
   // ═══════════════════════════════════════════════════════════════════════════
   console.log(chalk.bold("  API Connectivity\n"));
 
-  // Gemini API
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (apiKey) {
+  if (vertexEnabled) {
+    // Vertex AI connectivity check
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      await check({
-        label: "Gemini API reachable",
-        pass: res.ok,
-        fixable: false,
-        detail: res.ok ? undefined : `HTTP ${res.status}: Check API key validity`,
-      });
+      // Try to reach Vertex AI endpoint
+      const { loadConfig } = await import("../config/config.js");
+      const config = loadConfig(opts.runtimeDir);
+      const project = config.gemini?.vertexai?.project || process.env.GOOGLE_CLOUD_PROJECT;
+      const location = config.gemini?.vertexai?.location || "us-central1";
 
-      if (res.ok && opts.verbose) {
-        const data = await res.json() as { models?: Array<{ name: string }> };
-        const modelCount = data.models?.length || 0;
-        console.log(chalk.dim(`    ${modelCount} models available`));
+      if (project) {
+        // Check if we can reach the Vertex AI endpoint
+        const endpoint = `https://${location}-aiplatform.googleapis.com`;
+        try {
+          const res = await fetch(endpoint, { method: "HEAD" });
+          await check({
+            label: `Vertex AI endpoint reachable (${location})`,
+            pass: res.status !== 0, // Even 4xx means endpoint is reachable
+            fixable: false,
+            detail: `Endpoint: ${endpoint}`,
+          });
+
+          if (opts.verbose) {
+            console.log(chalk.dim(`    Project: ${project}`));
+            console.log(chalk.dim(`    Location: ${location}`));
+            console.log(chalk.dim(`    Endpoint: ${endpoint}`));
+          }
+        } catch {
+          await check({
+            label: "Vertex AI endpoint reachable",
+            pass: false,
+            fixable: false,
+            detail: `Network error reaching ${endpoint}`,
+          });
+        }
+      } else {
+        await check({
+          label: "Vertex AI project configured",
+          pass: false,
+          fixable: false,
+          detail: "Set project in config or GOOGLE_CLOUD_PROJECT env var",
+        });
       }
     } catch (err) {
+      console.log(chalk.dim("    Could not check Vertex AI connectivity"));
+    }
+  } else {
+    // Gemini API key connectivity check
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        await check({
+          label: "Gemini API reachable",
+          pass: res.ok,
+          fixable: false,
+          detail: res.ok ? undefined : `HTTP ${res.status}: Check API key validity`,
+        });
+
+        if (res.ok && opts.verbose) {
+          const data = await res.json() as { models?: Array<{ name: string }> };
+          const modelCount = data.models?.length || 0;
+          console.log(chalk.dim(`    ${modelCount} models available`));
+        }
+      } catch (err) {
+        await check({
+          label: "Gemini API reachable",
+          pass: false,
+          fixable: false,
+          detail: "Network error - check internet connection",
+        });
+      }
+    } else {
       await check({
         label: "Gemini API reachable",
         pass: false,
         fixable: false,
-        detail: "Network error - check internet connection",
+        detail: "GEMINI_API_KEY not set",
       });
     }
-  } else {
-    await check({
-      label: "Gemini API reachable",
-      pass: false,
-      fixable: false,
-      detail: "GEMINI_API_KEY not set",
-    });
   }
 
   console.log();

@@ -22,11 +22,109 @@ const commands: SlashCommand[] = [
     name: "help",
     description: "Show available commands",
     handler: async () => {
-      console.log(t.bold("\nCommands:\n"));
-      for (const cmd of commands) {
-        console.log(`  ${t.brand("/" + cmd.name.padEnd(14))} ${t.dim(cmd.description)}`);
+      const chalk = (await import("chalk")).default;
+
+      // Group commands by category
+      const categories: Record<string, string[]> = {
+        "Core": ["help", "clear", "status", "quick", "exit"],
+        "Session": ["session", "history", "resume", "reset", "rename", "compact", "sessions"],
+        "AI & Models": ["model", "provider", "thinking", "vertex", "plan", "execute"],
+        "Memory": ["memory", "memstatus"],
+        "Tools & Skills": ["tools", "skills", "skill"],
+        "Channels": ["channels", "connect"],
+        "Marathon": ["marathon"],
+        "System": ["config", "security", "logs", "tokens", "cost", "context", "stats", "doctor", "onboard"],
+        "Utilities": ["export", "copy", "theme", "verbose", "checkpoints", "rewind"],
+        "Advanced": ["wallet", "peers", "cron", "agents", "plugins", "integrations", "browser", "voice"],
+      };
+
+      console.log(chalk.bold.cyan("\n  Wispy Commands\n"));
+
+      for (const [category, cmdNames] of Object.entries(categories)) {
+        const categoryCommands = commands.filter(c => cmdNames.includes(c.name));
+        if (categoryCommands.length === 0) continue;
+
+        console.log(chalk.bold(`  ${category}`));
+        for (const cmd of categoryCommands) {
+          console.log(`    ${chalk.cyan("/" + cmd.name.padEnd(14))} ${chalk.dim(cmd.description)}`);
+        }
+        console.log();
       }
-      console.log();
+
+      console.log(chalk.dim("  Type / to see all commands, or /command for details.\n"));
+    },
+  },
+  {
+    name: "quick",
+    description: "Quick actions [build|run|test|deploy]",
+    handler: async (args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const [action, ...rest] = args.trim().split(" ");
+      const target = rest.join(" ");
+
+      if (!action) {
+        console.log(chalk.bold.cyan("\n  Quick Actions\n"));
+        console.log("  Usage: /quick <action> [target]\n");
+        console.log(chalk.dim("  Actions:"));
+        console.log(`    ${chalk.cyan("build")}   Create a new project`);
+        console.log(`           /quick build landing page`);
+        console.log(`           /quick build react dashboard`);
+        console.log(`           /quick build express api`);
+        console.log();
+        console.log(`    ${chalk.cyan("run")}     Run a command or script`);
+        console.log(`           /quick run npm install`);
+        console.log(`           /quick run dev server`);
+        console.log();
+        console.log(`    ${chalk.cyan("test")}    Run tests`);
+        console.log(`           /quick test`);
+        console.log(`           /quick test auth module`);
+        console.log();
+        console.log(`    ${chalk.cyan("deploy")} Deploy to production`);
+        console.log(`           /quick deploy vercel`);
+        console.log(`           /quick deploy netlify`);
+        console.log();
+        console.log(`    ${chalk.cyan("fix")}     Fix issues`);
+        console.log(`           /quick fix lint errors`);
+        console.log(`           /quick fix build errors`);
+        console.log();
+        return;
+      }
+
+      // Convert quick action to natural language and send to agent
+      const prompts: Record<string, string> = {
+        "build": `Create a ${target || "web application"}. Use modern frameworks and best practices.`,
+        "run": `Run: ${target || "npm start"}`,
+        "test": `Run tests${target ? ` for ${target}` : ""}. Show results.`,
+        "deploy": `Deploy to ${target || "production"}. Guide me through the process.`,
+        "fix": `Fix ${target || "all errors"}. Analyze and resolve issues.`,
+        "explain": `Explain ${target || "this code"}. Be concise and clear.`,
+        "refactor": `Refactor ${target || "the code"}. Improve structure and readability.`,
+        "debug": `Debug ${target || "the issue"}. Find and fix the root cause.`,
+      };
+
+      const prompt = prompts[action.toLowerCase()];
+      if (!prompt) {
+        console.log(chalk.red(`\n  Unknown action: ${action}`));
+        console.log(chalk.dim("  Use /quick to see available actions.\n"));
+        return;
+      }
+
+      console.log(chalk.dim(`\n  → ${prompt}\n`));
+
+      // Send to agent
+      try {
+        const { loadConfig } = await import("../config/config.js");
+        const config = loadConfig(ctx.runtimeDir);
+
+        for await (const chunk of ctx.agent.chatStream(prompt, "cli-user", "cli")) {
+          if (chunk.type === "text") {
+            process.stdout.write(chunk.content);
+          }
+        }
+        console.log("\n");
+      } catch (err) {
+        console.log(chalk.red(`\n  Error: ${err instanceof Error ? err.message : err}\n`));
+      }
     },
   },
   {
@@ -80,6 +178,16 @@ const commands: SlashCommand[] = [
       console.log(`  ID:       ${config.agent.id}`);
       console.log(`  Mode:     ${ctx.agent.getMode() === "plan" ? chalk.yellow("PLAN") : chalk.green("EXECUTE")}`);
       console.log(`  Model:    ${chalk.magenta(config.gemini.models.pro)}`);
+
+      // Show Vertex AI or API key mode
+      const vertexEnabled = config.gemini.vertexai?.enabled;
+      if (vertexEnabled) {
+        const project = config.gemini.vertexai?.project || "default";
+        const location = config.gemini.vertexai?.location || "us-central1";
+        console.log(`  Backend:  ${chalk.green("Vertex AI")} (${project}, ${location})`);
+      } else {
+        console.log(`  Backend:  ${chalk.blue("Gemini API")} (API key)`);
+      }
       console.log(`  Provider: ${chalk.blue(config.activeProvider || "gemini")}`);
       console.log();
 
@@ -568,6 +676,22 @@ const commands: SlashCommand[] = [
     },
   },
   {
+    name: "doctor",
+    description: "Diagnose configuration issues",
+    handler: async (args, ctx) => {
+      const { runDoctor } = await import("./doctor.js");
+      const fix = args.includes("--fix") || args.includes("-f");
+      const verbose = args.includes("--verbose") || args.includes("-v");
+      await runDoctor({
+        rootDir: process.cwd(),
+        runtimeDir: ctx.runtimeDir,
+        soulDir: ctx.soulDir,
+        fix,
+        verbose,
+      });
+    },
+  },
+  {
     name: "prompts",
     description: "Browse prompt history",
     handler: async () => {
@@ -995,6 +1119,87 @@ const commands: SlashCommand[] = [
       config.thinking = { ...config.thinking, defaultLevel: level as any, costAware: config.thinking?.costAware ?? true };
       saveConfig(ctx.runtimeDir, config);
       console.log(t.ok(`\nThinking level set to: ${level}\n`));
+    },
+  },
+  {
+    name: "vertex",
+    description: "Configure Vertex AI [enable|disable|status]",
+    handler: async (args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const { loadConfig, saveConfig } = await import("../config/config.js");
+      const config = loadConfig(ctx.runtimeDir);
+      const sub = args.trim().toLowerCase().split(" ")[0];
+      const restArgs = args.trim().split(" ").slice(1).join(" ");
+
+      if (sub === "enable") {
+        const project = restArgs || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+        if (!project) {
+          console.log(chalk.red("\nError: Project ID required."));
+          console.log(chalk.dim("Usage: /vertex enable <project-id>"));
+          console.log(chalk.dim("Or set GOOGLE_CLOUD_PROJECT environment variable.\n"));
+          return;
+        }
+
+        config.gemini.vertexai = {
+          enabled: true,
+          project,
+          location: config.gemini.vertexai?.location || "us-central1",
+        };
+        saveConfig(ctx.runtimeDir, config);
+
+        console.log(chalk.bold.green("\n  Vertex AI Enabled\n"));
+        console.log(`  Project:  ${chalk.cyan(project)}`);
+        console.log(`  Location: ${chalk.cyan(config.gemini.vertexai.location)}`);
+        console.log(chalk.dim("\n  Restart Wispy to apply changes."));
+        console.log(chalk.dim("  Make sure you're authenticated: gcloud auth application-default login\n"));
+        return;
+      }
+
+      if (sub === "disable") {
+        if (config.gemini.vertexai) {
+          config.gemini.vertexai.enabled = false;
+        }
+        saveConfig(ctx.runtimeDir, config);
+        console.log(chalk.yellow("\n  Vertex AI disabled. Using API key mode."));
+        console.log(chalk.dim("  Restart Wispy to apply changes.\n"));
+        return;
+      }
+
+      if (sub === "location") {
+        const location = restArgs || "us-central1";
+        if (!config.gemini.vertexai) {
+          config.gemini.vertexai = { enabled: false, location };
+        } else {
+          config.gemini.vertexai.location = location;
+        }
+        saveConfig(ctx.runtimeDir, config);
+        console.log(t.ok(`\n  Vertex AI location set to: ${location}\n`));
+        return;
+      }
+
+      // Default: show status
+      console.log(chalk.bold("\n  Vertex AI Configuration\n"));
+
+      const vertexConfig = config.gemini.vertexai;
+      const enabled = vertexConfig?.enabled || false;
+
+      console.log(`  Status:   ${enabled ? chalk.green("Enabled") : chalk.dim("Disabled")}`);
+      if (vertexConfig) {
+        console.log(`  Project:  ${vertexConfig.project || chalk.dim("not set")}`);
+        console.log(`  Location: ${vertexConfig.location || "us-central1"}`);
+      }
+
+      console.log(chalk.dim("\n  Commands:"));
+      console.log(chalk.dim("    /vertex enable <project-id>  Enable Vertex AI"));
+      console.log(chalk.dim("    /vertex disable              Disable (use API key)"));
+      console.log(chalk.dim("    /vertex location <region>    Set region (us-central1, europe-west1, etc.)"));
+
+      console.log(chalk.dim("\n  Benefits of Vertex AI:"));
+      console.log(chalk.dim("    • Enterprise-grade security & compliance"));
+      console.log(chalk.dim("    • Higher rate limits & quotas"));
+      console.log(chalk.dim("    • VPC Service Controls support"));
+      console.log(chalk.dim("    • Unified billing with Google Cloud"));
+      console.log(chalk.dim("    • Access to latest preview models\n"));
     },
   },
   {
@@ -1545,6 +1750,15 @@ const commands: SlashCommand[] = [
       console.log(`    Flash:    ${config.gemini.models.flash}`);
       console.log(`    Provider: ${config.activeProvider || "gemini"}`);
 
+      // Vertex AI
+      const vertexConfig = config.gemini.vertexai;
+      if (vertexConfig?.enabled) {
+        console.log(chalk.dim("\n  Vertex AI"));
+        console.log(`    Enabled:  ${chalk.green("yes")}`);
+        console.log(`    Project:  ${vertexConfig.project || "default"}`);
+        console.log(`    Location: ${vertexConfig.location || "us-central1"}`);
+      }
+
       console.log(chalk.dim("\n  Thinking"));
       console.log(`    Level:    ${config.thinking?.defaultLevel || "auto"}`);
       console.log(`    Cost-aware: ${config.thinking?.costAware !== false ? "yes" : "no"}`);
@@ -1606,7 +1820,7 @@ const commands: SlashCommand[] = [
   },
   {
     name: "marathon",
-    description: "Autonomous multi-day task execution (Gemini 3 Marathon Agent)",
+    description: "Autonomous multi-day task execution (Durable Background Agents)",
     handler: async (args, ctx) => {
       const chalk = (await import("chalk")).default;
       const { MarathonService, displayMarathonStatus, formatDuration } = await import("../marathon/service.js");
@@ -1622,18 +1836,30 @@ const commands: SlashCommand[] = [
         case "": {
           if (!subArgs && !subCmd) {
             // Show help
-            console.log(chalk.bold.cyan("\n  Marathon Agent - Autonomous Multi-Day Execution\n"));
+            console.log(chalk.bold.cyan("\n  Marathon Agent - Durable Background Agents\n"));
+            console.log(chalk.dim("  Run for minutes or days with auto-save, crash recovery, and human approval.\n"));
             console.log("  Usage:");
-            console.log(chalk.dim("    /marathon start <goal>") + " - Start a new marathon");
+            console.log(chalk.dim("    /marathon start <goal>") + " - Start a durable marathon");
             console.log(chalk.dim("    /marathon status") + " - View current marathon status");
             console.log(chalk.dim("    /marathon list") + " - List all marathons");
             console.log(chalk.dim("    /marathon pause") + " - Pause active marathon");
             console.log(chalk.dim("    /marathon resume [id]") + " - Resume a paused marathon");
             console.log(chalk.dim("    /marathon abort") + " - Abort active marathon");
             console.log(chalk.dim("    /marathon logs [id]") + " - View marathon logs");
+            console.log(chalk.dim("    /marathon approvals") + " - View pending approvals");
+            console.log(chalk.dim("    /marathon approve <id>") + " - Approve a request");
+            console.log(chalk.dim("    /marathon reject <id>") + " - Reject a request");
+            console.log(chalk.dim("    /marathon watchdog") + " - Start watchdog (crash monitoring)");
+            console.log();
+            console.log("  Features:");
+            console.log(chalk.green("    ✓ Auto-save") + " - State saved after every action");
+            console.log(chalk.green("    ✓ Crash recovery") + " - Auto-resume from last checkpoint");
+            console.log(chalk.green("    ✓ Human approval") + " - Pause for sensitive actions");
+            console.log(chalk.green("    ✓ Real-time streaming") + " - Progress via Telegram/webhook");
+            console.log(chalk.green("    ✓ Heartbeat monitoring") + " - Detect and restart crashed agents");
             console.log();
             console.log("  Example:");
-            console.log(chalk.green('    /marathon start "Build a full-stack todo app with auth and deploy to Vercel"'));
+            console.log(chalk.green('    /marathon start "Build a full-stack todo app with auth and deploy"'));
             console.log();
             return;
           }
@@ -1652,12 +1878,121 @@ const commands: SlashCommand[] = [
               return;
             }
 
-            await marathonService.start(goal, ctx.agent, apiKey, {
+            // Use durable marathon by default
+            await marathonService.startDurable(goal, ctx.agent, apiKey, {
               workingDirectory: process.cwd(),
+              streaming: {
+                telegram: config.channels.telegram?.enabled ? undefined : undefined,
+              },
             });
           } catch (error) {
             console.log(chalk.red(`  Error: ${error instanceof Error ? error.message : error}`));
           }
+          break;
+        }
+
+        case "approvals": {
+          const pending = marathonService.getPendingApprovals();
+          if (pending.length === 0) {
+            console.log(chalk.dim("\n  No pending approvals.\n"));
+            return;
+          }
+
+          console.log(chalk.bold.yellow(`\n  Pending Approvals (${pending.length}):\n`));
+          for (const { marathonId, request } of pending) {
+            console.log(`  ${chalk.cyan(request.id)} [${chalk.yellow(request.risk)}]`);
+            console.log(chalk.dim(`    Marathon: ${marathonId}`));
+            console.log(`    Action: ${request.action}`);
+            console.log(`    ${request.description}`);
+            console.log(chalk.dim(`    Created: ${new Date(request.timestamp).toLocaleString()}`));
+            console.log();
+          }
+          console.log(chalk.dim("  Use /marathon approve <id> or /marathon reject <id>\n"));
+          break;
+        }
+
+        case "approve": {
+          const requestId = subArgs.trim();
+          if (!requestId) {
+            console.log(chalk.red("  Usage: /marathon approve <request-id>"));
+            return;
+          }
+
+          // Find the marathon that has this request
+          const marathons = marathonService.listMarathons() as any[];
+          let found = false;
+          for (const m of marathons) {
+            if (m.approvalRequests?.some((r: any) => r.id === requestId)) {
+              const success = marathonService.approve(m.id, requestId, "cli-user");
+              if (success) {
+                console.log(chalk.green(`\n  ✓ Approved request ${requestId}\n`));
+                found = true;
+              }
+              break;
+            }
+          }
+          if (!found) {
+            console.log(chalk.red(`  Request not found: ${requestId}`));
+          }
+          break;
+        }
+
+        case "reject": {
+          const parts = subArgs.trim().split(" ");
+          const requestId = parts[0];
+          const reason = parts.slice(1).join(" ") || "Rejected via CLI";
+
+          if (!requestId) {
+            console.log(chalk.red("  Usage: /marathon reject <request-id> [reason]"));
+            return;
+          }
+
+          const marathons = marathonService.listMarathons() as any[];
+          let found = false;
+          for (const m of marathons) {
+            if (m.approvalRequests?.some((r: any) => r.id === requestId)) {
+              const success = marathonService.reject(m.id, requestId, reason);
+              if (success) {
+                console.log(chalk.red(`\n  ✗ Rejected request ${requestId}: ${reason}\n`));
+                found = true;
+              }
+              break;
+            }
+          }
+          if (!found) {
+            console.log(chalk.red(`  Request not found: ${requestId}`));
+          }
+          break;
+        }
+
+        case "watchdog": {
+          const apiKey = config.gemini.apiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+          if (!apiKey) {
+            console.log(chalk.red("  Error: Gemini API key not configured."));
+            return;
+          }
+
+          console.log(chalk.bold.cyan("\n  Starting Marathon Watchdog...\n"));
+          console.log("  The watchdog will:");
+          console.log(chalk.dim("    • Monitor all running marathons"));
+          console.log(chalk.dim("    • Detect crashed agents via heartbeat"));
+          console.log(chalk.dim("    • Auto-restart from last checkpoint"));
+          console.log(chalk.dim("    • Send alerts on crash detection\n"));
+
+          const watchdog = marathonService.initWatchdog(ctx.agent, apiKey);
+
+          watchdog.on("crash_detected", (data: any) => {
+            console.log(chalk.red(`  🚨 Crash detected: ${data.id}`));
+          });
+
+          watchdog.on("marathon_restarted", (data: any) => {
+            console.log(chalk.yellow(`  🔄 Restarted: ${data.id} (attempt ${data.attempt})`));
+          });
+
+          console.log(chalk.green("  ✓ Watchdog started. Press Ctrl+C to stop.\n"));
+
+          // Keep running
+          await new Promise(() => {});
           break;
         }
 

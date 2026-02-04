@@ -138,32 +138,117 @@ export async function runSetupWizard(opts: {
     // ── Step 2: API Key ──────────────────────────────────
     console.clear();
     console.log(WISPY_ASCII);
-    console.log(skyBold(`  ${chalk.yellow("▸")} Gemini API Key\n`));
-    console.log(dim("  You need a Google Gemini API key to use Wispy."));
-    console.log(dim(`  Get one free at: ${sky("https://aistudio.google.com/apikey")}\n`));
+    console.log(skyBold(`  ${chalk.yellow("▸")} AI Configuration\n`));
+    console.log(dim("  Choose how to connect to Google's AI:"));
+    console.log("");
+    console.log(`  ${sky("1)")} ${bold("Gemini API Key")} ${dim("(Free tier: 20 req/day)")}`);
+    console.log(dim(`     Get one free: ${sky("https://aistudio.google.com/apikey")}`));
+    console.log("");
+    console.log(`  ${sky("2)")} ${bold("Vertex AI")} ${dim("(Higher quotas: 300+ req/min)")}`);
+    console.log(dim(`     Requires Google Cloud project with billing enabled`));
+    console.log(dim(`     Setup: ${sky("https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstarts/quickstart-multimodal")}`));
+    console.log("");
 
     const existingKey = process.env.GEMINI_API_KEY;
+    const existingVertexProject = process.env.GOOGLE_CLOUD_PROJECT;
     let apiKey = "";
+    let useVertexAI = false;
 
-    if (existingKey) {
+    if (existingVertexProject) {
+      console.log(green(`  ✓ Found Vertex AI project: ${existingVertexProject}`));
+      console.log(dim("  Using Vertex AI for higher quotas.\n"));
+      useVertexAI = true;
+    } else if (existingKey) {
       const masked = existingKey.slice(0, 8) + "..." + existingKey.slice(-4);
-      console.log(green(`  ✓ Found existing key: ${masked}\n`));
+      console.log(green(`  ✓ Found existing API key: ${masked}\n`));
       apiKey = existingKey;
     } else {
-      apiKey = await ask(rl, sky("  Enter your Gemini API key: "));
-      apiKey = apiKey.trim();
+      const choice = await ask(rl, sky("  Select [1/2] (default: 1): "));
 
-      if (apiKey && !apiKey.startsWith("AIza")) {
-        console.log(yellowBright("\n  ⚠ Key doesn't start with 'AIza'. Double-check it's correct."));
-        const proceed = await ask(rl, dim("  Continue anyway? [y/N]: "));
-        if (!proceed.trim().toLowerCase().startsWith("y")) {
-          apiKey = "";
+      if (choice.trim() === "2") {
+        console.log("");
+        console.log(dim("  To use Vertex AI, you need:"));
+        console.log(dim("  1. A Google Cloud project with Vertex AI API enabled"));
+        console.log(dim("  2. A service account key JSON file"));
+        console.log(dim("  3. Set these environment variables in .env:"));
+        console.log("");
+        console.log(sky("     GOOGLE_CLOUD_PROJECT=your-project-id"));
+        console.log(sky("     GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json"));
+        console.log("");
+        console.log(dim("  Quick setup guide:"));
+        console.log(dim(`  ${sky("https://cloud.google.com/vertex-ai/docs/authentication")}`));
+        console.log("");
+        const vertexProject = await ask(rl, sky("  Enter your project ID (or press Enter to skip): "));
+        if (vertexProject.trim()) {
+          useVertexAI = true;
+          // Will save to .env later
+        } else {
+          console.log(dim("  Skipping Vertex AI. You can set it up later in .env\n"));
+        }
+      } else {
+        console.log("");
+        console.log(dim("  Get your free API key:"));
+        console.log(`  ${sky("→ https://aistudio.google.com/apikey")}`);
+        console.log("");
+        apiKey = await ask(rl, sky("  Enter your Gemini API key: "));
+        apiKey = apiKey.trim();
+
+        if (apiKey && !apiKey.startsWith("AIza")) {
+          console.log(yellowBright("\n  ⚠ Key doesn't start with 'AIza'. Double-check it's correct."));
+          const proceed = await ask(rl, dim("  Continue anyway? [y/N]: "));
+          if (!proceed.trim().toLowerCase().startsWith("y")) {
+            apiKey = "";
+            console.log(dim("  Skipped. Set GEMINI_API_KEY in .env later.\n"));
+          }
+        } else if (!apiKey) {
           console.log(dim("  Skipped. Set GEMINI_API_KEY in .env later.\n"));
         }
-      } else if (!apiKey) {
-        console.log(dim("  Skipped. Set GEMINI_API_KEY in .env later.\n"));
       }
     }
+
+    // ── Step 2b: Telegram Bot Token (optional) ──────────
+    console.clear();
+    console.log(WISPY_ASCII);
+    console.log(skyBold(`  ${chalk.blue("▸")} Telegram Bot Setup\n`));
+    console.log(dim("  Connect a Telegram bot to chat with Wispy from your phone!"));
+    console.log(dim("  Create code, monitor projects, and control your agent remotely.\n"));
+    console.log(dim("  How to create a Telegram bot:"));
+    console.log(`  ${sky("1)")} Message ${bold("@BotFather")} on Telegram`);
+    console.log(`  ${sky("2)")} Send ${sky("/newbot")} and follow the prompts`);
+    console.log(`  ${sky("3)")} Copy the bot token (looks like: 123456:ABC-DEF1234...)`);
+    console.log("");
+
+    const existingTelegramToken = process.env.TELEGRAM_BOT_TOKEN;
+    let telegramToken = "";
+
+    if (existingTelegramToken) {
+      const masked = existingTelegramToken.slice(0, 10) + "...";
+      console.log(green(`  ✓ Found existing token: ${masked}\n`));
+      telegramToken = existingTelegramToken;
+    } else {
+      telegramToken = await ask(rl, sky("  Enter Telegram bot token (or press Enter to skip): "));
+      telegramToken = telegramToken.trim();
+
+      if (!telegramToken) {
+        console.log(dim("  Skipped. You can add TELEGRAM_BOT_TOKEN to .env later.\n"));
+      }
+    }
+
+    // ── Step 2c: Autonomous Mode ──────────────────────────
+    console.clear();
+    console.log(WISPY_ASCII);
+    console.log(skyBold(`  ${chalk.yellow("▸")} Autonomous Mode\n`));
+    console.log(dim("  Wispy can run in two modes:\n"));
+    console.log(`  ${sky("1)")} ${bold("Standard Mode")} ${dim("(Safe)")}`);
+    console.log(dim("     Requires approval for file writes, code execution, etc."));
+    console.log(dim("     Best for: Production, shared environments, safety-first\n"));
+    console.log(`  ${sky("2)")} ${bold("Autonomous Mode")} ${dim("(Recommended for Development)")}`);
+    console.log(dim("     Auto-approves file operations, bash, browser automation"));
+    console.log(dim("     Best for: Local development, coding assistance, hackathons"));
+    console.log(dim("     ⚡ Like OpenClaw - create code and projects via Telegram\n"));
+
+    const modeChoice = await ask(rl, sky("  Select [1/2] (default: 2 for Autonomous): "));
+    const autonomousMode = modeChoice.trim() !== "1";
 
     // ── Step 3: Theme ────────────────────────────────────
     console.clear();
@@ -234,6 +319,84 @@ export async function runSetupWizard(opts: {
       selectedIntegrations = indices.map((i) => INTEGRATIONS[i].id);
     }
 
+    // ── Step 6: MCP Servers ─────────────────────────────
+    console.clear();
+    console.log(WISPY_ASCII);
+    console.log(skyBold(`  ${chalk.green("▸")} MCP Servers (Model Context Protocol)\n`));
+    console.log(dim("  MCP servers extend Wispy's capabilities with external tools."));
+    console.log(dim("  These let Wispy interact with your file system, web, and more.\n"));
+
+    const MCP_SERVERS = [
+      {
+        id: "filesystem",
+        label: "File System — Read/write files anywhere (Recommended)",
+        command: "npx",
+        args: ["-y", "@anthropic/mcp-server-filesystem", "--allow-write", "/"],
+        default: true,
+      },
+      {
+        id: "fetch",
+        label: "Web Fetch   — Make HTTP requests with headers & auth",
+        command: "npx",
+        args: ["-y", "@anthropic/mcp-server-fetch"],
+        default: true,
+      },
+      {
+        id: "memory",
+        label: "Memory      — Persistent key-value storage",
+        command: "npx",
+        args: ["-y", "@anthropic/mcp-server-memory"],
+        default: false,
+      },
+      {
+        id: "brave",
+        label: "Brave Search— Web search via Brave API",
+        command: "npx",
+        args: ["-y", "@anthropic/mcp-server-brave-search"],
+        default: false,
+        envRequired: "BRAVE_API_KEY",
+      },
+      {
+        id: "github",
+        label: "GitHub      — Access repos, issues, PRs",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-github"],
+        default: false,
+        envRequired: "GITHUB_TOKEN",
+      },
+      {
+        id: "postgres",
+        label: "PostgreSQL  — Query databases directly",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-postgres"],
+        default: false,
+        envRequired: "DATABASE_URL",
+      },
+    ];
+
+    for (let i = 0; i < MCP_SERVERS.length; i++) {
+      const mark = MCP_SERVERS[i].default ? green("[x]") : dim("[ ]");
+      const num = sky(`${i + 1})`);
+      const envNote = MCP_SERVERS[i].envRequired ? dim(` (needs ${MCP_SERVERS[i].envRequired})`) : "";
+      console.log(`  ${mark} ${num} ${MCP_SERVERS[i].label}${envNote}`);
+    }
+
+    console.log("");
+    console.log(dim("  MCP servers run alongside the gateway and provide additional tools."));
+    console.log(dim(`  Learn more: ${sky("https://modelcontextprotocol.io")}\n`));
+
+    const mcpInput = await ask(rl, sky("  Enter numbers to enable (default: 1,2): "));
+    let selectedMCPs: typeof MCP_SERVERS;
+
+    if (!mcpInput.trim()) {
+      selectedMCPs = MCP_SERVERS.filter((m) => m.default);
+    } else {
+      const indices = parseNumberList(mcpInput, MCP_SERVERS.length);
+      selectedMCPs = indices.length > 0
+        ? indices.map((i) => MCP_SERVERS[i])
+        : MCP_SERVERS.filter((m) => m.default);
+    }
+
     rl.close();
 
     // ── Save config ──────────────────────────────────────
@@ -254,11 +417,14 @@ export async function runSetupWizard(opts: {
       channels: {
         web: { enabled: true, port: 4000 },
         rest: { enabled: true, port: 4001 },
-        telegram: { enabled: false },
+        telegram: { enabled: !!telegramToken, token: telegramToken || undefined },
         whatsapp: { enabled: false },
       },
-      memory: { embeddingDimensions: 768, heartbeatIntervalMinutes: 30 },
-      security: { requireApprovalForExternal: true, allowedGroups: [] as string[] },
+      browser: { enabled: true },
+      wallet: { enabled: false, chain: "base-sepolia" },
+      memory: { embeddingDimensions: 768, heartbeatIntervalMinutes: 30, hybridSearch: true },
+      security: { requireApprovalForExternal: !autonomousMode, allowedGroups: [] as string[], autonomousMode },
+      thinking: { defaultLevel: "medium", costAware: true },
       theme: selectedTheme,
       agents: selectedAgents,
       integrations: selectedIntegrations,
@@ -267,22 +433,47 @@ export async function runSetupWizard(opts: {
     const configPath = path.resolve(runtimeDir, "config.yaml");
     writeYAML(configPath, config);
 
-    // Save API key to .env
-    if (apiKey && !existingKey) {
-      const envPath = path.resolve(rootDir, ".env");
-      const envLine = `GEMINI_API_KEY=${apiKey}\n`;
+    // ── Save MCP server configuration ───────────────────
+    const mcpDir = path.resolve(runtimeDir, "mcp");
+    fs.mkdirSync(mcpDir, { recursive: true });
 
-      if (fs.existsSync(envPath)) {
-        const existing = fs.readFileSync(envPath, "utf-8");
-        if (!existing.includes("GEMINI_API_KEY=")) {
-          fs.appendFileSync(envPath, `\n${envLine}`);
-        }
-      } else {
-        fs.writeFileSync(envPath, envLine);
+    const mcpConfig = {
+      servers: selectedMCPs.map((m) => ({
+        id: m.id,
+        command: m.command,
+        args: m.args,
+        enabled: true,
+        env: {},
+      })),
+    };
+
+    const mcpConfigPath = path.resolve(mcpDir, "servers.json");
+    fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+
+    // Save credentials to .env
+    const envPath = path.resolve(rootDir, ".env");
+    let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
+
+    // Add API key if new
+    if (apiKey && !existingKey) {
+      if (!envContent.includes("GEMINI_API_KEY=")) {
+        envContent += `\nGEMINI_API_KEY=${apiKey}`;
       }
     }
 
-    // ── Step 6: Summary ──────────────────────────────────
+    // Add Telegram token if new
+    if (telegramToken && !existingTelegramToken) {
+      if (!envContent.includes("TELEGRAM_BOT_TOKEN=")) {
+        envContent += `\nTELEGRAM_BOT_TOKEN=${telegramToken}`;
+      }
+    }
+
+    // Write .env if we have content
+    if (envContent.trim()) {
+      fs.writeFileSync(envPath, envContent.trim() + "\n");
+    }
+
+    // ── Step 7: Summary ──────────────────────────────────
     console.clear();
     console.log(WISPY_ASCII);
     console.log(skyBold(`  ${chalk.green("✓")} Setup complete!\n`));
@@ -296,14 +487,40 @@ export async function runSetupWizard(opts: {
             return found ? found.label : id;
           }).join(", ")
         : "None (enable later with /integrations)";
+    const mcpDisplay =
+      selectedMCPs.length > 0
+        ? selectedMCPs.map((m) => capitalize(m.id)).join(", ")
+        : "None";
 
+    const aiDisplay = useVertexAI ? "Vertex AI (high quota)" : apiKey ? "Gemini API" : "Not configured";
+    const telegramDisplay = telegramToken ? green("Enabled") : dim("Not configured");
+    const modeDisplay = autonomousMode
+      ? chalk.yellow("⚡ Autonomous") + dim(" (auto-approve file/code ops)")
+      : green("🛡️ Standard") + dim(" (requires approval)");
+
+    console.log(`  ${dim("AI Provider:")}  ${aiDisplay}`);
+    console.log(`  ${dim("Mode:")}         ${modeDisplay}`);
     console.log(`  ${dim("Theme:")}        ${themeDisplay}`);
     console.log(`  ${dim("Agents:")}       ${agentsDisplay}`);
+    console.log(`  ${dim("Telegram:")}     ${telegramDisplay}`);
+    console.log(`  ${dim("MCP Servers:")}  ${mcpDisplay}`);
     console.log(`  ${dim("Integrations:")} ${intDisplay}`);
     console.log("");
-    console.log(`  Run ${sky("'wispy chat'")} to start chatting!`);
-    console.log(`  Type ${sky("/help")} for all commands.`);
-    console.log(`  ${sky("?")} for shortcuts\n`);
+
+    if (!apiKey && !useVertexAI) {
+      console.log(yellowBright("  ⚠ No AI credentials configured!"));
+      console.log(dim("  Add to .env: GEMINI_API_KEY=your-key-here"));
+      console.log("");
+    }
+
+    console.log(`  Run ${sky("'wispy gateway'")} to start the server!`);
+    console.log(`  Or  ${sky("'wispy chat'")} for interactive CLI mode.`);
+    console.log("");
+    console.log(dim("  Helpful links:"));
+    console.log(dim(`  • Get API Key: ${sky("https://aistudio.google.com/apikey")}`));
+    console.log(dim(`  • Vertex AI:   ${sky("https://cloud.google.com/vertex-ai")}`));
+    console.log(dim(`  • Telegram:    ${sky("https://t.me/BotFather")}`));
+    console.log("");
   } catch (err: any) {
     rl.close();
     if (err?.message === "Setup cancelled.") {

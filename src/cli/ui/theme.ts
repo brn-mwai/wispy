@@ -151,6 +151,11 @@ export function getTheme(): Theme {
   return current;
 }
 
+/** Alias for getTheme - for backward compatibility */
+export function getCurrentTheme(): Theme {
+  return current;
+}
+
 export function setTheme(name: ThemeName): void {
   current = themes[name];
 }

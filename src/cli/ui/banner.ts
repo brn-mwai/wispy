@@ -15,9 +15,32 @@ const ICON = [
   `  ${sky("▀██▀██▀██▀")}  `,                     //   ▀██▀██▀██▀   (wavy ghost bottom)
 ];
 
-export function showBanner(modelName?: string): void {
+export interface BannerOptions {
+  modelName?: string;
+  vertexai?: boolean;
+  project?: string;
+  location?: string;
+}
+
+export function showBanner(modelNameOrOptions?: string | BannerOptions): void {
   const cwd = process.cwd();
-  const version = "v0.6.1";
+  const version = "v0.6.2";
+
+  // Handle both old signature (string) and new signature (options object)
+  let modelName: string | undefined;
+  let vertexai = false;
+  let project: string | undefined;
+  let location: string | undefined;
+
+  if (typeof modelNameOrOptions === "string") {
+    modelName = modelNameOrOptions;
+  } else if (modelNameOrOptions) {
+    modelName = modelNameOrOptions.modelName;
+    vertexai = modelNameOrOptions.vertexai || false;
+    project = modelNameOrOptions.project;
+    location = modelNameOrOptions.location;
+  }
+
   const model = modelName || "Gemini";
 
   // Format model name nicely
@@ -32,11 +55,16 @@ export function showBanner(modelName?: string): void {
   const maxCwd = 40;
   const shortCwd = cwd.length > maxCwd ? "..." + cwd.slice(-maxCwd) : cwd;
 
+  // Provider info
+  const providerInfo = vertexai
+    ? chalk.green("Vertex AI") + chalk.dim(` (${project || "default"}${location ? `, ${location}` : ""})`)
+    : chalk.dim(displayModel);
+
   console.log();
   console.log(`  ${ICON[0]}`);
   console.log(`  ${ICON[1]}`);
   console.log(`  ${ICON[2]}   ${skyBold("Wispy")} ${chalk.dim(version)}`);
-  console.log(`  ${ICON[3]}   ${chalk.dim(displayModel)}`);
+  console.log(`  ${ICON[3]}   ${providerInfo}`);
   console.log(`  ${ICON[4]}   ${chalk.dim(shortCwd)}`);
   console.log(`  ${ICON[5]}`);
   console.log(`  ${ICON[6]}`);

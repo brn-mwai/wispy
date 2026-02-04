@@ -22,7 +22,7 @@ import { join } from "path";
 import chalk from "chalk";
 import { showBanner } from "./ui/banner.js";
 import { t } from "./ui/theme.js";
-import { startSpinner, startThinkingSpinner, stopSpinner, updateSpinner } from "./ui/spinner.js";
+import { startSpinner, startThinkingSpinner, startToolSpinner, stopSpinner, updateSpinner, succeedSpinner, failSpinner } from "./ui/spinner.js";
 import { formatToolCall, type ToolCallDisplay } from "./ui/tool-display.js";
 import { CliHistory } from "./history.js";
 import { handleSlashCommand, getCommands, verboseMode, type CommandContext } from "./commands.js";
@@ -38,6 +38,8 @@ import { McpRegistry } from "../mcp/client.js";
 import { loadSkills } from "../skills/loader.js";
 import { setApprovalHandler } from "../security/action-guard.js";
 import { showApprovalDialog } from "./permissions.js";
+import { CronService } from "../cron/service.js";
+import { ReminderService, type Reminder } from "../cron/reminders.js";
 
 export interface ReplOpts {
   rootDir: string;
@@ -77,12 +79,35 @@ export async function startRepl(opts: ReplOpts) {
   }
 
   const identity = loadOrCreateIdentity(runtimeDir);
-  const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("GEMINI_API_KEY not set. Add it to .env or config.");
-    process.exit(1);
+
+  // Initialize Gemini with Vertex AI or API key
+  const vertexConfig = config.gemini.vertexai;
+  let apiKeyInstance: string;
+
+  if (vertexConfig?.enabled) {
+    // Vertex AI mode - uses Google Cloud credentials
+    const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+    const location = vertexConfig.location || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+
+    if (!project) {
+      console.error("Vertex AI enabled but project not set. Add vertexai.project to config or set GOOGLE_CLOUD_PROJECT env var.");
+      process.exit(1);
+    }
+
+    initGemini({ vertexai: true, project, location });
+    apiKeyInstance = `vertex:${project}`; // Marker for Vertex mode
+    console.log(chalk.dim(`  Using Vertex AI (project: ${project}, location: ${location})`));
+  } else {
+    // Standard API key mode
+    const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY not set. Add it to .env or config, or enable Vertex AI.");
+      process.exit(1);
+    }
+    initGemini(apiKey);
+    apiKeyInstance = apiKey;
   }
-  initGemini(apiKey);
+
   logger.level = "silent";
 
   // Wire permission approval handler
@@ -109,6 +134,30 @@ export async function startRepl(opts: ReplOpts) {
   const mcpStatus = mcpRegistry.getStatus();
   if (mcpStatus.length > 0) agent.setMcpRegistry(mcpRegistry);
 
+  // Wire Cron and Reminder services
+  const cronService = new CronService(runtimeDir, agent);
+  cronService.start();
+  agent.setCronService(cronService);
+
+  const reminderService = new ReminderService(runtimeDir);
+  reminderService.setNotificationCallback(async (reminder: Reminder) => {
+    // Display reminder in CLI with bell sound
+    console.log();
+    console.log(chalk.yellow.bold("⏰ REMINDER"));
+    console.log(chalk.white(`   ${reminder.message}`));
+    console.log();
+    process.stdout.write("\x07"); // Terminal bell
+    return true;
+  });
+  reminderService.start();
+  agent.setReminderService(reminderService);
+
+  // Wire Marathon service for NLP-based control
+  // This enables natural language: "build me a todo app" instead of "/marathon Build a todo app"
+  const { MarathonService } = await import("../marathon/service.js");
+  const marathonService = new MarathonService(runtimeDir);
+  agent.setMarathonService(marathonService, apiKeyInstance);
+
   const history = new CliHistory(runtimeDir);
   const tokenManager = new TokenManager();
   let currentSession = "cli-repl";
@@ -123,7 +172,18 @@ export async function startRepl(opts: ReplOpts) {
   };
 
   // ── Launch layout ──
-  showBanner(config.gemini.models.pro);
+  const vertexEnabled = config.gemini.vertexai?.enabled || false;
+  showBanner({
+    modelName: config.gemini.models.pro,
+    vertexai: vertexEnabled,
+    project: config.gemini.vertexai?.project,
+    location: config.gemini.vertexai?.location,
+  });
+
+  // Show quick tips
+  console.log(chalk.dim("  Tips: /help for commands • /quick for shortcuts • /marathon for background tasks"));
+  console.log(chalk.dim("  Just type naturally — Wispy understands: \"build me a dashboard\", \"fix the bug\", etc."));
+  console.log();
   printSeparator();
 
   // ── Command completer for Tab autocomplete ──
@@ -256,12 +316,29 @@ export async function startRepl(opts: ReplOpts) {
             stopSpinner();
             const tc: ToolCallDisplay = { name: chunk.content, args: {}, status: "pending" };
             process.stdout.write(formatToolCall(tc) + "\n");
+            startToolSpinner(chunk.content);
             break;
           }
 
           case "tool_result": {
+            // Determine if tool succeeded or failed
+            const isError = chunk.content.toLowerCase().includes("error") ||
+                           chunk.content.toLowerCase().includes("failed") ||
+                           chunk.content.toLowerCase().includes("exception");
+
+            if (isError) {
+              failSpinner();
+            } else {
+              succeedSpinner();
+            }
+
             const maxLen = verboseMode ? 2000 : 200;
-            const tr: ToolCallDisplay = { name: "tool", args: {}, status: "ok", result: chunk.content.slice(0, maxLen) };
+            const tr: ToolCallDisplay = {
+              name: "tool",
+              args: {},
+              status: isError ? "error" : "ok",
+              result: chunk.content.slice(0, maxLen)
+            };
             process.stdout.write(formatToolCall(tr) + "\n");
             break;
           }
@@ -300,8 +377,19 @@ export async function startRepl(opts: ReplOpts) {
       const pct = Math.round((stats.sessionTokens / stats.budget.maxTokensPerSession) * 100);
       const modeTag = agent.getMode() === "plan" ? chalk.yellow(" [plan]") : "";
 
+      // Format model name
+      const modelDisplay = config.gemini.models.pro
+        .replace("gemini-", "")
+        .replace("-preview", "")
+        .split("-")
+        .map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(" ");
+
+      // Backend indicator
+      const backendTag = vertexEnabled ? chalk.green(" [Vertex]") : "";
+
       console.log();
-      console.log(chalk.dim(`  Gemini 2.5 Flash · ${totalTk} tokens · $${cost} · ${pct}% context · ${elapsed}s${modeTag}`));
+      console.log(chalk.dim(`  ${modelDisplay} · ${totalTk} tokens · $${cost} · ${pct}% context · ${elapsed}s${modeTag}${backendTag}`));
       console.log();
       printSeparator();
       console.log(chalk.dim("  ? for shortcuts"));

@@ -16,6 +16,35 @@ const SOUL_DIR = resolve(ROOT_DIR, "wispy");
 
 loadEnv(ROOT_DIR);
 
+/**
+ * Initialize Gemini with either Vertex AI or API key based on config
+ * Returns the API key or "vertex:{project}" marker for marathon service
+ */
+async function initGeminiFromConfig(): Promise<string> {
+  const { loadConfig } = await import("../config/config.js");
+  const { initGemini } = await import("../ai/gemini.js");
+
+  const config = loadConfig(RUNTIME_DIR);
+  const vertexConfig = config.gemini?.vertexai;
+
+  if (vertexConfig?.enabled) {
+    const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+    const location = vertexConfig.location || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+    if (!project) {
+      throw new Error("Vertex AI enabled but project not set. Set gemini.vertexai.project in config or GOOGLE_CLOUD_PROJECT env var.");
+    }
+    initGemini({ vertexai: true, project, location });
+    return `vertex:${project}`;
+  } else {
+    const apiKey = config.gemini?.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY not set. Run 'wispy setup' or set the environment variable.");
+    }
+    initGemini(apiKey);
+    return apiKey;
+  }
+}
+
 const program = new Command();
 
 program
@@ -28,14 +57,107 @@ program
   .command("gateway")
   .description("Start the Wispy gateway (main entry point)")
   .option("-p, --port <port>", "WebSocket port", "4000")
+  .option("-d, --daemon", "Run in background as daemon (auto-restart on crash)")
+  .option("--persist", "Run in foreground with auto-restart on crash")
+  .option("--status", "Show daemon status")
+  .option("--stop", "Stop running daemon")
+  .option("--logs [lines]", "Tail daemon logs (default: 50 lines)")
+  .option("--max-restarts <n>", "Max restart attempts for persist mode", "10")
+  .option("--restart-delay <ms>", "Delay between restarts in ms", "3000")
   .action(async (opts) => {
+    const {
+      isDaemonRunning,
+      getDaemonStatus,
+      startDaemon,
+      stopDaemon,
+      runWithPersistence,
+      displayDaemonStatus,
+      tailDaemonLogs,
+    } = await import("../daemon/runner.js");
+
+    // Status check
+    if (opts.status) {
+      displayDaemonStatus(RUNTIME_DIR);
+      return;
+    }
+
+    // Stop daemon
+    if (opts.stop) {
+      if (stopDaemon(RUNTIME_DIR)) {
+        console.log("\n  \x1b[32m✓\x1b[0m Gateway daemon stopped\n");
+      } else {
+        console.log("\n  \x1b[33m○\x1b[0m No daemon running\n");
+      }
+      return;
+    }
+
+    // Tail logs
+    if (opts.logs !== undefined) {
+      const lines = parseInt(opts.logs, 10) || 50;
+      const logLines = tailDaemonLogs(RUNTIME_DIR, lines);
+      if (logLines.length === 0) {
+        console.log("\n  \x1b[33m○\x1b[0m No daemon logs found\n");
+        return;
+      }
+      console.log("\n  \x1b[36mDaemon Logs\x1b[0m\n");
+      for (const line of logLines) {
+        console.log("  " + line);
+      }
+      console.log();
+      return;
+    }
+
+    const port = parseInt(opts.port);
+    const maxRestarts = parseInt(opts.maxRestarts);
+    const restartDelay = parseInt(opts.restartDelay);
+
+    // Daemon mode (background)
+    if (opts.daemon) {
+      try {
+        const result = await startDaemon({
+          rootDir: ROOT_DIR,
+          runtimeDir: RUNTIME_DIR,
+          soulDir: SOUL_DIR,
+          port,
+          maxRestarts,
+          restartDelay,
+        });
+        console.log("\n  \x1b[32m✓\x1b[0m Gateway daemon started");
+        console.log(`  PID:  ${result.pid}`);
+        console.log(`  Logs: ${result.logFile}`);
+        console.log("\n  Commands:");
+        console.log("    wispy gateway --status  - Check status");
+        console.log("    wispy gateway --logs    - View logs");
+        console.log("    wispy gateway --stop    - Stop daemon\n");
+        return;
+      } catch (err) {
+        console.error(`\n  \x1b[31m✗\x1b[0m ${err instanceof Error ? err.message : err}\n`);
+        process.exit(1);
+      }
+    }
+
+    // Persist mode (foreground with auto-restart)
+    if (opts.persist) {
+      console.log("\n  \x1b[36m◐\x1b[0m Starting gateway with persistence (Ctrl+C to stop)...\n");
+      await runWithPersistence({
+        rootDir: ROOT_DIR,
+        runtimeDir: RUNTIME_DIR,
+        soulDir: SOUL_DIR,
+        port,
+        maxRestarts,
+        restartDelay,
+      });
+      return;
+    }
+
+    // Standard mode (no auto-restart)
     log.info("Starting Wispy gateway...");
     const { startGateway } = await import("../gateway/server.js");
     await startGateway({
       rootDir: ROOT_DIR,
       runtimeDir: RUNTIME_DIR,
       soulDir: SOUL_DIR,
-      port: parseInt(opts.port),
+      port,
     });
   });
 
@@ -73,9 +195,19 @@ program
 
     await runBoot({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
     const config = loadConfig(RUNTIME_DIR);
-    const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) { console.error("GEMINI_API_KEY not set"); process.exit(1); }
-    initGemini(apiKey);
+
+    // Support both Vertex AI and API key modes
+    const vertexConfig = config.gemini.vertexai;
+    if (vertexConfig?.enabled) {
+      const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+      const location = vertexConfig.location || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+      if (!project) { console.error("Vertex AI enabled but project not set"); process.exit(1); }
+      initGemini({ vertexai: true, project, location });
+    } else {
+      const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!apiKey) { console.error("GEMINI_API_KEY not set. Run 'wispy setup' first."); process.exit(1); }
+      initGemini(apiKey);
+    }
 
     const agent = new Agent({ config, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
     const result = await agent.chat(message, "cli-user", "cli", "main");
@@ -194,8 +326,17 @@ memory
 
     await runBoot({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
     const config = loadConfig(RUNTIME_DIR);
-    const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY;
-    if (apiKey) initGemini(apiKey);
+
+    // Support both Vertex AI and API key modes
+    const vertexConfig = config.gemini.vertexai;
+    if (vertexConfig?.enabled) {
+      const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT;
+      const location = vertexConfig.location || "us-central1";
+      if (project) initGemini({ vertexai: true, project, location });
+    } else {
+      const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (apiKey) initGemini(apiKey);
+    }
 
     const mm = new MemoryManager(RUNTIME_DIR, config);
     const results = await mm.search(query);
@@ -268,8 +409,17 @@ cron
 
     await runBoot({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
     const config = loadConfig(RUNTIME_DIR);
-    const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY;
-    if (apiKey) initGemini(apiKey);
+
+    // Support both Vertex AI and API key modes
+    const vertexConfig = config.gemini.vertexai;
+    if (vertexConfig?.enabled) {
+      const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT;
+      const location = vertexConfig.location || "us-central1";
+      if (project) initGemini({ vertexai: true, project, location });
+    } else {
+      const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (apiKey) initGemini(apiKey);
+    }
 
     const agent = new Agent({ config, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
     const cronSvc = new CronService(RUNTIME_DIR, agent);
@@ -446,8 +596,14 @@ program
 
     if (hasRuntime) {
       const config = loadConfig(RUNTIME_DIR);
-      const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY;
-      console.log(`  Gemini API: ${apiKey && apiKey !== "your_gemini_api_key_here" ? "\x1b[32m✓\x1b[0m configured" : "\x1b[31m✗\x1b[0m missing"}`);
+      const vertexEnabled = config.gemini?.vertexai?.enabled;
+      if (vertexEnabled) {
+        const project = config.gemini.vertexai?.project || process.env.GOOGLE_CLOUD_PROJECT;
+        console.log(`  Backend:    \x1b[32m✓\x1b[0m Vertex AI (${project || "default"})`);
+      } else {
+        const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+        console.log(`  Gemini API: ${apiKey && apiKey !== "your_gemini_api_key_here" ? "\x1b[32m✓\x1b[0m configured" : "\x1b[31m✗\x1b[0m missing"}`);
+      }
 
       const reg = loadRegistry(RUNTIME_DIR, config.agent.id);
       const sessionCount = Object.keys(reg.sessions).length;
@@ -474,10 +630,71 @@ program
 // === SETUP WIZARD ===
 program
   .command("setup")
-  .description("Run the interactive setup wizard")
-  .action(async () => {
-    const { runSetupWizard } = await import("./setup/wizard.js");
-    await runSetupWizard({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
+  .description("Run the interactive setup wizard (configure API keys, channels, wallet)")
+  .option("--quick", "Quick setup with minimal prompts")
+  .action(async (options) => {
+    const { runAutomatedSetup } = await import("./setup/automated-setup.js");
+    await runAutomatedSetup({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR });
+  });
+
+// === IMAGE GENERATION ===
+program
+  .command("generate")
+  .alias("image")
+  .description("Generate images using AI (Imagen 3)")
+  .argument("<prompt>", "Description of the image to generate")
+  .option("-o, --output <path>", "Output file path", "./generated-image.png")
+  .option("-n, --number <count>", "Number of images to generate", "1")
+  .option("--aspect <ratio>", "Aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4)", "1:1")
+  .action(async (prompt, options) => {
+    const { generateImage, initGemini } = await import("../ai/gemini.js");
+    const { loadConfig } = await import("../config/config.js");
+    const fs = await import("fs");
+    const path = await import("path");
+
+    // Initialize Gemini with Vertex AI or API key
+    const config = loadConfig(RUNTIME_DIR);
+    const vertexConfig = config.gemini?.vertexai;
+    if (vertexConfig?.enabled) {
+      const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT;
+      const location = vertexConfig.location || "us-central1";
+      if (project) initGemini({ vertexai: true, project, location });
+    } else {
+      const apiKey = config.gemini?.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (apiKey) initGemini(apiKey);
+    }
+
+    console.log("\n  \x1b[36m◐\x1b[0m Generating image...\n");
+    console.log(`  \x1b[2mPrompt: "${prompt}"\x1b[0m\n`);
+
+    try {
+      const result = await generateImage(prompt, {
+        numberOfImages: parseInt(options.number, 10),
+        aspectRatio: options.aspect,
+      });
+
+      if (result.images.length === 0) {
+        console.log("  \x1b[31m✗\x1b[0m No images generated. Try a different prompt.\n");
+        return;
+      }
+
+      for (let i = 0; i < result.images.length; i++) {
+        const img = result.images[i];
+        const ext = img.mimeType.split("/")[1] || "png";
+        const filename = result.images.length > 1
+          ? options.output.replace(/\.(\w+)$/, `-${i + 1}.$1`)
+          : options.output;
+
+        const outputPath = path.resolve(filename);
+        const buffer = Buffer.from(img.base64, "base64");
+        fs.writeFileSync(outputPath, buffer);
+
+        console.log(`  \x1b[32m✓\x1b[0m Saved: ${outputPath}`);
+      }
+      console.log();
+    } catch (err) {
+      console.log(`  \x1b[31m✗\x1b[0m Error: ${err instanceof Error ? err.message : err}\n`);
+    }
   });
 
 // === AUTO-START ===
@@ -506,6 +723,173 @@ autostart
     const { removeAutoStart } = await import("../autostart/service.js");
     removeAutoStart();
     console.log("\n\x1b[32m✓\x1b[0m Auto-start removed.\n");
+  });
+
+// === MCP SERVERS ===
+const mcp = program
+  .command("mcp")
+  .description("Manage MCP (Model Context Protocol) servers");
+
+mcp
+  .command("list")
+  .description("List configured MCP servers")
+  .action(async () => {
+    const { readJSON } = await import("../utils/file.js");
+    const store = readJSON<{ servers: any[] }>(resolve(RUNTIME_DIR, "mcp", "servers.json"));
+    if (!store || store.servers.length === 0) {
+      console.log("\nNo MCP servers configured.");
+      console.log("Run 'wispy setup' to configure MCP servers, or add them manually:\n");
+      console.log("  wispy mcp add filesystem npx -y @anthropic/mcp-server-filesystem --allow-write /\n");
+      return;
+    }
+    console.log(`\n${store.servers.length} MCP server(s):\n`);
+    for (const s of store.servers) {
+      const icon = s.enabled ? "\x1b[32m✓\x1b[0m" : "\x1b[33m○\x1b[0m";
+      console.log(`  ${icon} ${s.id}`);
+      console.log(`    Command: ${s.command} ${s.args.join(" ")}`);
+    }
+    console.log();
+  });
+
+mcp
+  .command("add")
+  .description("Add an MCP server")
+  .argument("<id>", "Server identifier (e.g., 'filesystem')")
+  .argument("<command>", "Command to run (e.g., 'npx')")
+  .argument("[args...]", "Command arguments")
+  .action(async (id, command, args) => {
+    const { readJSON, writeJSON, ensureDir } = await import("../utils/file.js");
+    const mcpPath = resolve(RUNTIME_DIR, "mcp", "servers.json");
+    ensureDir(resolve(RUNTIME_DIR, "mcp"));
+
+    const store = readJSON<{ servers: any[] }>(mcpPath) || { servers: [] };
+
+    // Check if already exists
+    if (store.servers.some((s) => s.id === id)) {
+      console.log(`\n\x1b[33m○\x1b[0m Server '${id}' already exists. Use 'wispy mcp remove ${id}' first.\n`);
+      return;
+    }
+
+    store.servers.push({
+      id,
+      command,
+      args: args || [],
+      enabled: true,
+      env: {},
+    });
+
+    writeJSON(mcpPath, store);
+    console.log(`\n\x1b[32m✓\x1b[0m Added MCP server: ${id}`);
+    console.log(`  Command: ${command} ${args.join(" ")}`);
+    console.log("\n  Restart the gateway to activate.\n");
+  });
+
+mcp
+  .command("remove")
+  .description("Remove an MCP server")
+  .argument("<id>", "Server identifier to remove")
+  .action(async (id) => {
+    const { readJSON, writeJSON } = await import("../utils/file.js");
+    const mcpPath = resolve(RUNTIME_DIR, "mcp", "servers.json");
+    const store = readJSON<{ servers: any[] }>(mcpPath);
+
+    if (!store) {
+      console.log("\nNo MCP servers configured.\n");
+      return;
+    }
+
+    const idx = store.servers.findIndex((s) => s.id === id);
+    if (idx === -1) {
+      console.log(`\n\x1b[31m✗\x1b[0m Server '${id}' not found.\n`);
+      return;
+    }
+
+    store.servers.splice(idx, 1);
+    writeJSON(mcpPath, store);
+    console.log(`\n\x1b[32m✓\x1b[0m Removed MCP server: ${id}\n`);
+  });
+
+mcp
+  .command("enable")
+  .description("Enable an MCP server")
+  .argument("<id>", "Server identifier")
+  .action(async (id) => {
+    const { readJSON, writeJSON } = await import("../utils/file.js");
+    const mcpPath = resolve(RUNTIME_DIR, "mcp", "servers.json");
+    const store = readJSON<{ servers: any[] }>(mcpPath);
+
+    if (!store) {
+      console.log("\nNo MCP servers configured.\n");
+      return;
+    }
+
+    const server = store.servers.find((s) => s.id === id);
+    if (!server) {
+      console.log(`\n\x1b[31m✗\x1b[0m Server '${id}' not found.\n`);
+      return;
+    }
+
+    server.enabled = true;
+    writeJSON(mcpPath, store);
+    console.log(`\n\x1b[32m✓\x1b[0m Enabled MCP server: ${id}\n`);
+  });
+
+mcp
+  .command("disable")
+  .description("Disable an MCP server")
+  .argument("<id>", "Server identifier")
+  .action(async (id) => {
+    const { readJSON, writeJSON } = await import("../utils/file.js");
+    const mcpPath = resolve(RUNTIME_DIR, "mcp", "servers.json");
+    const store = readJSON<{ servers: any[] }>(mcpPath);
+
+    if (!store) {
+      console.log("\nNo MCP servers configured.\n");
+      return;
+    }
+
+    const server = store.servers.find((s) => s.id === id);
+    if (!server) {
+      console.log(`\n\x1b[31m✗\x1b[0m Server '${id}' not found.\n`);
+      return;
+    }
+
+    server.enabled = false;
+    writeJSON(mcpPath, store);
+    console.log(`\n\x1b[33m○\x1b[0m Disabled MCP server: ${id}\n`);
+  });
+
+mcp
+  .command("templates")
+  .description("Show available MCP server templates")
+  .action(() => {
+    console.log("\nPopular MCP Server Templates:\n");
+    console.log("  \x1b[36mFile System\x1b[0m — Read/write files anywhere");
+    console.log("    wispy mcp add filesystem npx -y @anthropic/mcp-server-filesystem --allow-write /");
+    console.log();
+    console.log("  \x1b[36mWeb Fetch\x1b[0m — Make HTTP requests with headers");
+    console.log("    wispy mcp add fetch npx -y @anthropic/mcp-server-fetch");
+    console.log();
+    console.log("  \x1b[36mMemory\x1b[0m — Persistent key-value storage");
+    console.log("    wispy mcp add memory npx -y @anthropic/mcp-server-memory");
+    console.log();
+    console.log("  \x1b[36mBrave Search\x1b[0m — Web search via Brave API");
+    console.log("    wispy mcp add brave npx -y @anthropic/mcp-server-brave-search");
+    console.log("    (Requires BRAVE_API_KEY env var)");
+    console.log();
+    console.log("  \x1b[36mGitHub\x1b[0m — Access repos, issues, PRs");
+    console.log("    wispy mcp add github npx -y @modelcontextprotocol/server-github");
+    console.log("    (Requires GITHUB_TOKEN env var)");
+    console.log();
+    console.log("  \x1b[36mPostgreSQL\x1b[0m — Query databases directly");
+    console.log("    wispy mcp add postgres npx -y @modelcontextprotocol/server-postgres");
+    console.log("    (Requires DATABASE_URL env var)");
+    console.log();
+    console.log("  \x1b[36mSlack\x1b[0m — Read/send Slack messages");
+    console.log("    wispy mcp add slack npx -y @modelcontextprotocol/server-slack");
+    console.log("    (Requires SLACK_BOT_TOKEN env var)");
+    console.log();
+    console.log("  Learn more: https://modelcontextprotocol.io/servers\n");
   });
 
 // === INTEGRATIONS ===
@@ -647,17 +1031,17 @@ program
         console.log(chalk.red("  No paused marathon found to resume."));
         return;
       }
-      const apiKey = config.gemini.apiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        console.log(chalk.red("  Error: Gemini API key not configured."));
-        return;
+      try {
+        const apiKeyOrMarker = await initGeminiFromConfig();
+        const agent = new Agent({
+          config,
+          runtimeDir: RUNTIME_DIR,
+          soulDir: SOUL_DIR,
+        });
+        await marathonService.resume(state.id, agent, apiKeyOrMarker);
+      } catch (err) {
+        console.log(chalk.red(`  Error: ${err instanceof Error ? err.message : err}`));
       }
-      const agent = new Agent({
-        config,
-        runtimeDir: RUNTIME_DIR,
-        soulDir: SOUL_DIR,
-              });
-      await marathonService.resume(state.id, agent, apiKey);
       return;
     }
 
@@ -695,22 +1079,21 @@ program
       return;
     }
 
-    const apiKey = config.gemini.apiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.log(chalk.red("\n  Error: Gemini API key not configured."));
-      console.log(chalk.dim("  Run: wispy onboard\n"));
-      return;
+    try {
+      const apiKeyOrMarker = await initGeminiFromConfig();
+      const agent = new Agent({
+        config,
+        runtimeDir: RUNTIME_DIR,
+        soulDir: SOUL_DIR,
+      });
+
+      await marathonService.start(goal, agent, apiKeyOrMarker, {
+        workingDirectory: process.cwd(),
+      });
+    } catch (err) {
+      console.log(chalk.red(`\n  Error: ${err instanceof Error ? err.message : err}`));
+      console.log(chalk.dim("  Run: wispy setup\n"));
     }
-
-    const agent = new Agent({
-      config,
-      runtimeDir: RUNTIME_DIR,
-      soulDir: SOUL_DIR,
-          });
-
-    await marathonService.start(goal, agent, apiKey, {
-      workingDirectory: process.cwd(),
-    });
   });
 
 // === INTERACTIVE REPL (default) ===
