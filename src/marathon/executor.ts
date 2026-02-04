@@ -89,10 +89,78 @@ export class MarathonExecutor {
   private aborted = false;
   private paused = false;
 
+  // Loop detection - tracks action history to prevent infinite loops
+  private actionHistory: Array<{ action: string; hash: string; timestamp: number }> = [];
+  private readonly MAX_IDENTICAL_ACTIONS = 3;
+  private readonly ACTION_HISTORY_WINDOW = 10;
+
   constructor(agent: Agent, apiKey: string, state: MarathonState) {
     this.agent = agent;
     this.apiKey = apiKey;
     this.state = state;
+  }
+
+  /**
+   * LOOP DETECTION: Hash an action to detect repetition
+   * This solves the #1 competitor complaint: infinite loops
+   */
+  private hashAction(milestoneId: string, response: string): string {
+    // Create a semantic hash of the action
+    const normalized = response
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[0-9]+/g, 'N')  // Normalize numbers
+      .slice(0, 500);  // First 500 chars
+    return createHash('md5').update(`${milestoneId}:${normalized}`).digest('hex').slice(0, 16);
+  }
+
+  /**
+   * Check if we're stuck in a loop
+   */
+  private detectLoop(milestoneId: string, response: string): { isLoop: boolean; count: number } {
+    const hash = this.hashAction(milestoneId, response);
+    const now = Date.now();
+
+    // Add to history
+    this.actionHistory.push({ action: milestoneId, hash, timestamp: now });
+
+    // Keep only recent actions
+    if (this.actionHistory.length > this.ACTION_HISTORY_WINDOW) {
+      this.actionHistory = this.actionHistory.slice(-this.ACTION_HISTORY_WINDOW);
+    }
+
+    // Count identical actions in recent history
+    const identicalCount = this.actionHistory.filter(a => a.hash === hash).length;
+
+    return {
+      isLoop: identicalCount >= this.MAX_IDENTICAL_ACTIONS,
+      count: identicalCount
+    };
+  }
+
+  /**
+   * Force replanning when stuck - breaks the loop
+   */
+  private async forceReplan(milestone: Milestone, loopCount: number): Promise<void> {
+    this.log("warn", `Loop detected (${loopCount}x identical actions). Forcing replan...`, milestone.id);
+
+    const replanPrompt = `CRITICAL: You are stuck in a loop, repeating the same action ${loopCount} times.
+
+MILESTONE: ${milestone.title}
+DESCRIPTION: ${milestone.description}
+
+The previous approach is NOT working. You MUST try a COMPLETELY DIFFERENT strategy:
+1. Analyze what keeps failing
+2. Identify the root cause
+3. Propose an alternative approach
+4. If the task is impossible, explain why and mark as blocked
+
+DO NOT repeat the same actions. Try something fundamentally different.`;
+
+    await this.agent.chat(replanPrompt, "main-executor", "main", "main");
+
+    // Clear action history to give fresh start
+    this.actionHistory = [];
   }
 
   async run(): Promise<MarathonState> {
@@ -170,8 +238,20 @@ export class MarathonExecutor {
         "main"
       );
 
-      // Update thought signature for continuity
-      this.state.thoughtSignature = this.extractThoughtSignature(response.text);
+      // LOOP DETECTION: Check if we're stuck
+      const loopCheck = this.detectLoop(milestone.id, response.text);
+      if (loopCheck.isLoop) {
+        await this.forceReplan(milestone, loopCheck.count);
+        // After replan, let the outer loop retry the milestone
+        throw new Error(`Loop detected after ${loopCheck.count} identical actions - replanning`);
+      }
+
+      // Update thought signature for continuity (Gemini 3 feature)
+      // Pass native signature from API response when available
+      this.state.thoughtSignature = this.extractThoughtSignature(
+        response.text,
+        (response as any).thoughtSignature
+      );
 
       // Verify the milestone
       const verified = await this.verifyMilestone(milestone);
@@ -264,7 +344,11 @@ export class MarathonExecutor {
       "main",
       "main"
     );
-    this.state.thoughtSignature = this.extractThoughtSignature(response.text);
+    // Update thought signature for recovery context continuity
+    this.state.thoughtSignature = this.extractThoughtSignature(
+      response.text,
+      (response as any).thoughtSignature
+    );
 
     // Re-verify after recovery attempt
     const verified = await this.verifyMilestone(milestone);
@@ -320,9 +404,33 @@ export class MarathonExecutor {
     return snapshot;
   }
 
-  private extractThoughtSignature(response: string): string {
-    // Extract key context for continuity between milestones
-    // This maintains reasoning state across the main
+  /**
+   * Extract Thought Signature for context continuity
+   *
+   * Gemini 3's Thought Signatures are encrypted representations of the model's
+   * internal thought process. They maintain reasoning context across API calls,
+   * enabling Marathon Mode's multi-day task execution with seamless continuity.
+   *
+   * When Gemini 3 returns a native thoughtSignature, we use it directly.
+   * Otherwise, we construct a semantic signature from the response.
+   */
+  private extractThoughtSignature(response: string, nativeSignature?: string): string {
+    // If Gemini 3 provided a native thought signature, use it as the base
+    if (nativeSignature) {
+      // Combine native signature with our structured context
+      const signature = {
+        gemini3ThoughtSignature: nativeSignature,
+        timestamp: new Date().toISOString(),
+        artifactsCreated: this.state.artifacts,
+        milestonesCompleted: this.state.plan.milestones
+          .filter((m) => m.status === "completed")
+          .map((m) => m.title),
+        progress: `${this.state.plan.milestones.filter(m => m.status === "completed").length}/${this.state.plan.milestones.length}`,
+      };
+      return JSON.stringify(signature, null, 2);
+    }
+
+    // Fallback: Extract key context from response text for continuity
     const lines = response.split("\n");
     const significantLines = lines.filter(
       (line) =>
@@ -332,16 +440,20 @@ export class MarathonExecutor {
         line.includes("important") ||
         line.includes("note") ||
         line.includes("TODO") ||
-        line.includes("next")
+        line.includes("next") ||
+        line.includes("completed") ||
+        line.includes("success")
     );
 
     const signature = {
       timestamp: new Date().toISOString(),
-      keyPoints: significantLines.slice(0, 10),
+      keyPoints: significantLines.slice(0, 15),
       artifactsCreated: this.state.artifacts,
       milestonesCompleted: this.state.plan.milestones
         .filter((m) => m.status === "completed")
         .map((m) => m.title),
+      workingDirectory: this.state.workingDirectory,
+      progress: `${this.state.plan.milestones.filter(m => m.status === "completed").length}/${this.state.plan.milestones.length}`,
     };
 
     return JSON.stringify(signature, null, 2);

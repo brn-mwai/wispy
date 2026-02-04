@@ -1,25 +1,180 @@
 /**
  * Marathon Service
  * Main entry point for autonomous multi-day task execution
+ *
+ * Features:
+ * - Durable background agents that run for minutes or days
+ * - Auto-save state after every action
+ * - Real-time progress streaming
+ * - Human approval for sensitive actions
+ * - Heartbeat mechanism for crash detection
+ * - Auto-resume from last checkpoint on restart
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "fs";
 import { resolve } from "path";
 import { nanoid } from "nanoid";
 import type { Agent } from "../core/agent.js";
-import type { MarathonState, MarathonResult, NotificationConfig } from "./types.js";
+import type { MarathonState, MarathonResult, NotificationConfig, DurableMarathonState } from "./types.js";
 import { createMarathonPlan, formatPlanSummary, getPlanProgress } from "./planner.js";
 import { MarathonExecutor } from "./executor.js";
+import { DurableMarathonExecutor } from "./durable-executor.js";
+import { MarathonWatchdog, getWatchdog } from "./watchdog.js";
 
 export class MarathonService {
   private runtimeDir: string;
   private marathonDir: string;
   private activeExecutor: MarathonExecutor | null = null;
+  private durableExecutor: DurableMarathonExecutor | null = null;
+  private watchdog: MarathonWatchdog | null = null;
 
   constructor(runtimeDir: string) {
     this.runtimeDir = runtimeDir;
     this.marathonDir = resolve(runtimeDir, "marathon");
     this.ensureDir(this.marathonDir);
+  }
+
+  /**
+   * Initialize watchdog service for crash monitoring
+   */
+  initWatchdog(agent: Agent, apiKey: string): MarathonWatchdog {
+    this.watchdog = getWatchdog();
+    this.watchdog.setAgent(agent, apiKey);
+
+    // Forward watchdog events
+    this.watchdog.on("crash_detected", (data) => {
+      console.log(`\n🚨 Crash detected for marathon ${data.id}`);
+    });
+
+    this.watchdog.on("marathon_restarted", (data) => {
+      console.log(`\n🔄 Marathon ${data.id} restarted (attempt ${data.attempt})`);
+    });
+
+    this.watchdog.start();
+    return this.watchdog;
+  }
+
+  /**
+   * Start a durable marathon with enhanced features
+   */
+  async startDurable(
+    goal: string,
+    agent: Agent,
+    apiKey: string,
+    options: {
+      workingDirectory?: string;
+      notifications?: Partial<NotificationConfig>;
+      context?: string;
+      streaming?: {
+        telegram?: string;
+        webhook?: string;
+      };
+      approvalPolicy?: {
+        enabled?: boolean;
+        autoApproveTimeout?: number;
+      };
+    } = {}
+  ): Promise<DurableMarathonState> {
+    const workingDirectory = options.workingDirectory || process.cwd();
+
+    console.log("\n🏃 Starting Durable Marathon Agent...\n");
+    console.log(`Goal: ${goal}`);
+    console.log(`Working Directory: ${workingDirectory}\n`);
+
+    // Phase 1: Planning
+    console.log("📋 Phase 1: Creating execution plan with ultra thinking...\n");
+    const plan = await createMarathonPlan(
+      goal,
+      options.context || `Working directory: ${workingDirectory}`,
+      apiKey
+    );
+
+    console.log(formatPlanSummary(plan));
+    console.log("\n");
+
+    // Create initial state
+    const baseState: MarathonState = {
+      id: nanoid(12),
+      plan,
+      status: "planning",
+      startedAt: new Date().toISOString(),
+      totalTokensUsed: 0,
+      totalCost: 0,
+      thoughtSignature: JSON.stringify({
+        goal,
+        workingDirectory,
+        initialized: new Date().toISOString(),
+      }),
+      workingDirectory,
+      artifacts: [],
+      logs: [],
+      humanInputQueue: [],
+      notifications: {
+        enabled: options.notifications?.enabled ?? true,
+        channels: options.notifications?.channels ?? {},
+        notifyOn: {
+          milestoneComplete: true,
+          milestoneFailure: true,
+          humanInputNeeded: true,
+          marathonComplete: true,
+          dailySummary: true,
+          ...options.notifications?.notifyOn,
+        },
+      },
+      checkpoints: [],
+    };
+
+    // Initialize durable state
+    const durableState = DurableMarathonExecutor.initializeDurableState(baseState);
+
+    // Configure streaming
+    if (options.streaming?.telegram) {
+      durableState.streaming.targets.telegram = options.streaming.telegram;
+    }
+    if (options.streaming?.webhook) {
+      durableState.streaming.targets.webhook = options.streaming.webhook;
+    }
+
+    // Configure approval policy
+    if (options.approvalPolicy) {
+      durableState.approvalPolicy.enabled = options.approvalPolicy.enabled ?? true;
+      if (options.approvalPolicy.autoApproveTimeout) {
+        durableState.approvalPolicy.autoApproveTimeout = options.approvalPolicy.autoApproveTimeout;
+      }
+    }
+
+    // Save initial state
+    this.saveState(durableState);
+
+    // Phase 2: Execution
+    console.log("🚀 Phase 2: Beginning durable autonomous execution...\n");
+    console.log("The agent will now work autonomously. Features enabled:");
+    console.log("  ✅ Auto-save after every action");
+    console.log("  ✅ Heartbeat monitoring (crash detection)");
+    console.log("  ✅ Real-time progress streaming");
+    console.log("  ✅ Human approval for sensitive actions");
+    console.log("\nYou can:");
+    console.log("  - Check status with: wispy marathon status");
+    console.log("  - Pause with: wispy marathon pause");
+    console.log("  - View logs with: wispy marathon logs");
+    console.log("  - Approve actions with: wispy marathon approve <id>\n");
+
+    // Create and start durable executor
+    this.durableExecutor = new DurableMarathonExecutor(agent, apiKey, durableState);
+
+    // Set up event listeners
+    this.durableExecutor.on("event", (event) => {
+      if (event.type === "approval_needed") {
+        console.log("\n⚠️  Approval needed! Check your Telegram or run: wispy marathon approvals\n");
+      }
+    });
+
+    const finalState = await this.durableExecutor.run();
+
+    // Save final state
+    this.saveState(finalState);
+
+    return finalState;
   }
 
   private ensureDir(dir: string): void {
@@ -155,12 +310,183 @@ export class MarathonService {
    * Abort the active marathon
    */
   abort(): void {
-    if (this.activeExecutor) {
+    if (this.durableExecutor) {
+      this.durableExecutor.abort();
+      console.log("🛑 Durable Marathon aborted.");
+    } else if (this.activeExecutor) {
       this.activeExecutor.abort();
       console.log("🛑 Marathon aborted.");
     } else {
       console.log("No active marathon to abort.");
     }
+  }
+
+  /**
+   * Approve a pending approval request
+   */
+  approve(marathonId: string, requestId: string, approvedBy: string = "user"): boolean {
+    // Try watchdog first (for background marathons)
+    if (this.watchdog) {
+      return this.watchdog.approve(marathonId, requestId, approvedBy);
+    }
+
+    // Try active executor
+    if (this.durableExecutor) {
+      this.durableExecutor.approve(requestId, approvedBy);
+      return true;
+    }
+
+    // Try loading from disk
+    const state = this.loadState(marathonId) as DurableMarathonState | null;
+    if (state?.approvalRequests) {
+      const request = state.approvalRequests.find(r => r.id === requestId);
+      if (request && request.status === "pending") {
+        request.status = "approved";
+        request.approvedBy = approvedBy;
+        request.approvedAt = new Date().toISOString();
+        this.saveState(state);
+        console.log(`✅ Approved: ${request.description}`);
+        return true;
+      }
+    }
+
+    console.log("Approval request not found or already processed.");
+    return false;
+  }
+
+  /**
+   * Reject a pending approval request
+   */
+  reject(marathonId: string, requestId: string, reason: string = "User rejected"): boolean {
+    // Try watchdog first
+    if (this.watchdog) {
+      return this.watchdog.reject(marathonId, requestId, reason);
+    }
+
+    // Try active executor
+    if (this.durableExecutor) {
+      this.durableExecutor.reject(requestId, reason);
+      return true;
+    }
+
+    // Try loading from disk
+    const state = this.loadState(marathonId) as DurableMarathonState | null;
+    if (state?.approvalRequests) {
+      const request = state.approvalRequests.find(r => r.id === requestId);
+      if (request && request.status === "pending") {
+        request.status = "rejected";
+        request.reason = reason;
+        this.saveState(state);
+        console.log(`❌ Rejected: ${request.description}`);
+        return true;
+      }
+    }
+
+    console.log("Approval request not found or already processed.");
+    return false;
+  }
+
+  /**
+   * Get all pending approval requests
+   */
+  getPendingApprovals(): Array<{ marathonId: string; request: any }> {
+    const pending: Array<{ marathonId: string; request: any }> = [];
+
+    // From watchdog
+    if (this.watchdog) {
+      return this.watchdog.getPendingApprovals();
+    }
+
+    // From all marathon files
+    const marathons = this.listMarathons() as DurableMarathonState[];
+    for (const state of marathons) {
+      if (state.approvalRequests) {
+        const requests = state.approvalRequests.filter(r => r.status === "pending");
+        for (const request of requests) {
+          pending.push({ marathonId: state.id, request });
+        }
+      }
+    }
+
+    return pending;
+  }
+
+  /**
+   * Start durable marathon in background (detached)
+   * Returns immediately, marathon continues running
+   */
+  async startBackground(
+    goal: string,
+    agent: Agent,
+    apiKey: string,
+    options: Parameters<typeof this.startDurable>[3] = {}
+  ): Promise<{ marathonId: string; statePath: string }> {
+    const workingDirectory = options.workingDirectory || process.cwd();
+
+    console.log("\n🏃 Starting Background Durable Marathon...\n");
+    console.log(`Goal: ${goal}`);
+
+    // Create plan
+    const plan = await createMarathonPlan(
+      goal,
+      options.context || `Working directory: ${workingDirectory}`,
+      apiKey
+    );
+
+    // Create state
+    const baseState: MarathonState = {
+      id: nanoid(12),
+      plan,
+      status: "planning",
+      startedAt: new Date().toISOString(),
+      totalTokensUsed: 0,
+      totalCost: 0,
+      thoughtSignature: JSON.stringify({ goal, workingDirectory }),
+      workingDirectory,
+      artifacts: [],
+      logs: [],
+      humanInputQueue: [],
+      notifications: {
+        enabled: options.notifications?.enabled ?? true,
+        channels: options.notifications?.channels ?? {},
+        notifyOn: {
+          milestoneComplete: true,
+          milestoneFailure: true,
+          humanInputNeeded: true,
+          marathonComplete: true,
+          dailySummary: true,
+        },
+      },
+      checkpoints: [],
+    };
+
+    const durableState = DurableMarathonExecutor.initializeDurableState(baseState);
+
+    // Configure
+    if (options.streaming?.telegram) {
+      durableState.streaming.targets.telegram = options.streaming.telegram;
+    }
+
+    // Save state
+    this.saveState(durableState);
+
+    const statePath = resolve(this.marathonDir, `${durableState.id}.json`);
+
+    console.log(`\n✅ Marathon created: ${durableState.id}`);
+    console.log(`📁 State: ${statePath}`);
+    console.log("\nThe watchdog will start this marathon automatically.");
+    console.log("Check status: wispy marathon status");
+
+    // If watchdog is running, it will pick this up
+    // Otherwise, tell user to start watchdog
+    if (!this.watchdog) {
+      console.log("\n⚠️  Start watchdog for auto-execution: wispy marathon watchdog");
+    }
+
+    return {
+      marathonId: durableState.id,
+      statePath,
+    };
   }
 
   /**
