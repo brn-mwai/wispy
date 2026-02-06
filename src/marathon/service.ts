@@ -73,6 +73,8 @@ export class MarathonService {
         enabled?: boolean;
         autoApproveTimeout?: number;
       };
+      telegramBot?: any;
+      telegramChatId?: string;
     } = {}
   ): Promise<DurableMarathonState> {
     const workingDirectory = options.workingDirectory || process.cwd();
@@ -162,6 +164,15 @@ export class MarathonService {
     // Create and start durable executor
     this.durableExecutor = new DurableMarathonExecutor(agent, apiKey, durableState);
 
+    // Set up Telegram bot for enhanced visuals
+    if (options.telegramBot && options.telegramChatId) {
+      this.durableExecutor.setTelegramBot(options.telegramBot, options.telegramChatId);
+    } else if (options.streaming?.telegram) {
+      // If we have a chat ID but no bot, try to use the stored chat ID
+      // The executor will use the global bot instance from telegram-visuals
+      this.durableExecutor.setTelegramBot(null, options.streaming.telegram);
+    }
+
     // Set up event listeners
     this.durableExecutor.on("event", (event) => {
       if (event.type === "approval_needed") {
@@ -194,6 +205,8 @@ export class MarathonService {
       workingDirectory?: string;
       notifications?: Partial<NotificationConfig>;
       context?: string;
+      telegramBot?: any;
+      telegramChatId?: string;
     } = {}
   ): Promise<MarathonState> {
     const workingDirectory = options.workingDirectory || process.cwd();
@@ -255,8 +268,11 @@ export class MarathonService {
     console.log("  - Pause with: wispy marathon pause");
     console.log("  - View logs with: wispy marathon logs\n");
 
-    // Create and start executor
-    this.activeExecutor = new MarathonExecutor(agent, apiKey, state);
+    // Create and start executor with telegram options
+    this.activeExecutor = new MarathonExecutor(agent, apiKey, state, {
+      telegramBot: options.telegramBot,
+      telegramChatId: options.telegramChatId,
+    });
     const finalState = await this.activeExecutor.run();
 
     // Save final state

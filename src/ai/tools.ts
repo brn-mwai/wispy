@@ -117,11 +117,11 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   },
   {
     name: "localhost_serve",
-    description: "Start a simple HTTP server on localhost for the specified directory. Use for: serving static files, testing web apps locally.",
+    description: "ONLY for plain HTML/CSS/JS files with NO package.json. NEVER use for React/Next.js/Vue/Vite projects - those REQUIRE run_dev_server or they will show 'Index of' directory listing instead of the app. If the project has package.json, ALWAYS use run_dev_server instead.",
     parameters: {
       type: "object",
       properties: {
-        directory: { type: "string", description: "Directory to serve (default: current)" },
+        directory: { type: "string", description: "Directory with static HTML files (no package.json/React/Next.js)" },
         port: { type: "number", description: "Port to serve on (default: 3000)" },
       },
     },
@@ -292,12 +292,12 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   // === Media ===
   {
     name: "image_generate",
-    description: "Generate an image from a text description using Imagen 3.",
+    description: "Generate images from a text description using Imagen 3. Supports 1-4 variations. If user asks for 'variations' or 'options', generate 4 images.",
     parameters: {
       type: "object",
       properties: {
         prompt: { type: "string", description: "Detailed image description" },
-        count: { type: "number", description: "Number of images to generate (1-4, default: 1)" },
+        count: { type: "number", description: "Number of image variations (1-4). Use 4 if user wants variations/options." },
         aspectRatio: { type: "string", description: "Aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4 (default: 1:1)" },
       },
       required: ["prompt"],
@@ -625,11 +625,11 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   },
   {
     name: "run_dev_server",
-    description: "Start a development server for a project. Automatically detects if it's an npm project or static files.",
+    description: "REQUIRED for React/Next.js/Vue/Vite/npm projects. Runs 'npm run dev' which compiles JSX/TypeScript and hot-reloads. If you built a project with create_project, scaffold_nextjs, or ANY framework, you MUST use this tool to start the server. Using localhost_serve will show 'Index of' directory listing instead of your app.",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "Path to the project (relative to workspace)" },
+        path: { type: "string", description: "Path to project folder with package.json (e.g., 'frontend', 'my-app')" },
         port: { type: "number", description: "Port to run on (default: 3000)" },
       },
       required: ["path"],
@@ -751,6 +751,365 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
       required: ["topic", "sections", "outputPath"],
     },
   },
+  // === Telegram Document Delivery ===
+  {
+    name: "send_document_to_telegram",
+    description: "Send a document file (PDF, DOCX, etc.) to the user via Telegram. Use after generating documents.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: { type: "string", description: "Path to the document file" },
+        caption: { type: "string", description: "Optional caption for the document" },
+        withVoice: { type: "boolean", description: "Include a voice note summary (default: false)" },
+        voiceText: { type: "string", description: "Text for voice note if withVoice is true" },
+      },
+      required: ["filePath"],
+    },
+  },
+  {
+    name: "send_progress_update",
+    description: "Send a progress update to the user via Telegram. Use during long-running tasks to keep user informed.",
+    parameters: {
+      type: "object",
+      properties: {
+        type: { type: "string", description: "Update type: thinking, milestone, question, complete, error, update" },
+        message: { type: "string", description: "The progress message to send" },
+        context: { type: "string", description: "Additional context (optional)" },
+        buttons: { type: "string", description: "JSON array of inline buttons [{text, callbackData}] (optional)" },
+        voiceNote: { type: "boolean", description: "Also send as voice note (optional)" },
+      },
+      required: ["type", "message"],
+    },
+  },
+  {
+    name: "ask_user_confirmation",
+    description: "Ask the user a yes/no question with inline buttons. Blocks until user responds. Use before critical actions.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The question to ask" },
+        context: { type: "string", description: "Additional context about why you're asking" },
+        approveText: { type: "string", description: "Text for approve button (default: 'Yes, go ahead')" },
+        denyText: { type: "string", description: "Text for deny button (default: 'No, wait')" },
+        timeout: { type: "number", description: "Timeout in ms (default: 5 minutes)" },
+      },
+      required: ["question"],
+    },
+  },
+  // === Enhanced File System ===
+  {
+    name: "file_permissions",
+    description: "Check or modify file permissions. Use to verify access before file operations.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File or directory path" },
+        action: { type: "string", description: "Action: check, grant_read, grant_write, grant_all" },
+      },
+      required: ["path", "action"],
+    },
+  },
+  {
+    name: "send_link",
+    description: "Send a URL link to the user with optional preview. Use to share resources, documentation, or results.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The URL to send" },
+        title: { type: "string", description: "Title for the link" },
+        description: { type: "string", description: "Brief description of what the link contains" },
+        disablePreview: { type: "boolean", description: "Disable link preview (default: false)" },
+      },
+      required: ["url"],
+    },
+  },
+  // === Grounding & Verification (Anti-Hallucination) ===
+  {
+    name: "verify_fact",
+    description: "Verify a fact using Google Search grounding. Use to ensure accuracy before stating facts.",
+    parameters: {
+      type: "object",
+      properties: {
+        claim: { type: "string", description: "The fact or claim to verify" },
+        source: { type: "string", description: "Optional specific source to check against" },
+      },
+      required: ["claim"],
+    },
+  },
+  {
+    name: "distinguish_task",
+    description: "Create a clear task boundary with context reset. Use when switching between different tasks.",
+    parameters: {
+      type: "object",
+      properties: {
+        newTaskName: { type: "string", description: "Name of the new task" },
+        newTaskContext: { type: "string", description: "Context and requirements for the new task" },
+        previousTaskSummary: { type: "string", description: "Brief summary of what was accomplished in previous task" },
+      },
+      required: ["newTaskName", "newTaskContext"],
+    },
+  },
+  // === Hugging Face Integration ===
+  {
+    name: "huggingface_inference",
+    description: "Run inference on a Hugging Face model. Use for conversational AI, text generation, embeddings.",
+    parameters: {
+      type: "object",
+      properties: {
+        model: { type: "string", description: "Model ID (e.g., 'meta-llama/Llama-3-8B-Instruct', 'mistralai/Mixtral-8x7B')" },
+        input: { type: "string", description: "Input text or prompt" },
+        task: { type: "string", description: "Task type: text-generation, conversational, summarization, embedding" },
+        parameters: { type: "string", description: "JSON string of model parameters (optional)" },
+      },
+      required: ["model", "input"],
+    },
+  },
+  // === Natural Voice (Gemini Native TTS) ===
+  {
+    name: "natural_voice_reply",
+    description: "Generate a natural, conversational voice reply using Gemini's native TTS. Much more human-like than other TTS. Use this for voice messages.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "The text to speak naturally" },
+        voice: { type: "string", description: "Voice: Kore (warm), Aoede (friendly), Charon (calm), Fenrir (deep). Default: Kore" },
+        sendToChat: { type: "boolean", description: "Send voice note to chat. Default: true" },
+      },
+      required: ["text"],
+    },
+  },
+  // === Multimodal Explanation ===
+  {
+    name: "multimodal_explain",
+    description: "Generate a complete explanation with text, diagram/image, and optional voice. Perfect for educational content.",
+    parameters: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "The topic to explain" },
+        includeVisuals: { type: "boolean", description: "Generate a diagram/image to illustrate. Default: true" },
+        includeAudio: { type: "boolean", description: "Generate voice explanation. Default: false" },
+        style: { type: "string", description: "Style: educational, conversational, professional. Default: educational" },
+      },
+      required: ["topic"],
+    },
+  },
+  // === Generate Diagram ===
+  {
+    name: "generate_diagram",
+    description: "Generate a visual diagram to explain a concept, process, or architecture.",
+    parameters: {
+      type: "object",
+      properties: {
+        concept: { type: "string", description: "What to diagram" },
+        type: { type: "string", description: "Diagram type: flowchart, architecture, concept, process. Default: concept" },
+        sendToChat: { type: "boolean", description: "Send to chat. Default: true" },
+      },
+      required: ["concept"],
+    },
+  },
+  // === Project Zip ===
+  {
+    name: "zip_and_send_project",
+    description: "Zip a project folder and send it via Telegram.",
+    parameters: {
+      type: "object",
+      properties: {
+        projectPath: { type: "string", description: "Path to the project folder to zip" },
+        zipName: { type: "string", description: "Name for the zip file (optional)" },
+      },
+      required: ["projectPath"],
+    },
+  },
+  // === Generate Document with Diagram ===
+  {
+    name: "generate_document_with_visuals",
+    description: "Generate a PDF document that includes auto-generated diagrams/images to explain concepts.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Document title" },
+        content: { type: "string", description: "Document content/explanation" },
+        generateDiagram: { type: "boolean", description: "Auto-generate a diagram for the content. Default: true" },
+        diagramPrompt: { type: "string", description: "Custom prompt for diagram generation (optional)" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  // === Desktop Screenshot ===
+  {
+    name: "desktop_screenshot",
+    description: "Take a screenshot of the desktop screen. Captures the entire screen or active window.",
+    parameters: {
+      type: "object",
+      properties: {
+        filename: { type: "string", description: "Output filename (optional, auto-generated if not provided)" },
+        region: { type: "string", description: "Region to capture: 'full' (entire screen), 'active' (active window). Default: full" },
+        monitor: { type: "number", description: "Monitor index for multi-monitor setups (0-based). Default: primary monitor" },
+        sendToChat: { type: "boolean", description: "Send screenshot to current Telegram chat after capture" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "screen_record",
+    description: "Record the desktop screen for a specified duration. Creates a video file.",
+    parameters: {
+      type: "object",
+      properties: {
+        filename: { type: "string", description: "Output filename (optional, auto-generated if not provided)" },
+        duration: { type: "number", description: "Recording duration in seconds. Default: 10" },
+        fps: { type: "number", description: "Frames per second. Default: 15" },
+        region: { type: "string", description: "Region: 'full' or 'active'. Default: full" },
+      },
+      required: [],
+    },
+  },
+  // === Git & GitHub Tools ===
+  {
+    name: "git_init",
+    description: "Initialize a git repository in a project folder. Creates .gitignore with sensible defaults.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the project folder" },
+        gitignoreTemplate: { type: "string", description: "Template: node, python, react, nextjs (default: node)" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "git_commit",
+    description: "Stage all changes and create a git commit with a descriptive message.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the git repository" },
+        message: { type: "string", description: "Commit message" },
+        all: { type: "boolean", description: "Stage all changes before commit (default: true)" },
+      },
+      required: ["path", "message"],
+    },
+  },
+  {
+    name: "git_push",
+    description: "Push commits to a remote GitHub repository. Creates the repo if it doesn't exist.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the git repository" },
+        remote: { type: "string", description: "Remote name (default: origin)" },
+        branch: { type: "string", description: "Branch name (default: main)" },
+        createRepo: { type: "boolean", description: "Create GitHub repo if not exists (requires gh CLI)" },
+        repoName: { type: "string", description: "GitHub repo name (for creation)" },
+        private: { type: "boolean", description: "Make repo private (default: false)" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "git_status",
+    description: "Check git status of a repository - shows changed files, staged changes, branch info.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the git repository" },
+      },
+      required: ["path"],
+    },
+  },
+  // === Vercel Deployment ===
+  {
+    name: "vercel_deploy",
+    description: "Deploy a project to Vercel. Supports Next.js, React, and static sites. Returns the deployment URL.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the project folder" },
+        production: { type: "boolean", description: "Deploy to production (default: false, creates preview)" },
+        name: { type: "string", description: "Project name on Vercel (optional)" },
+        env: { type: "string", description: "JSON object of environment variables (optional)" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "vercel_list",
+    description: "List recent Vercel deployments for a project.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the project folder (optional)" },
+        limit: { type: "number", description: "Number of deployments to list (default: 5)" },
+      },
+      required: [],
+    },
+  },
+  // === NPM/Package Management ===
+  {
+    name: "npm_install",
+    description: "Install npm packages in a project. Can install all dependencies or specific packages.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the project folder" },
+        packages: { type: "string", description: "Space-separated packages to install (optional, installs all if omitted)" },
+        dev: { type: "boolean", description: "Install as devDependencies (default: false)" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "npm_run",
+    description: "Run an npm script from package.json. Use for build, test, lint, etc.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the project folder" },
+        script: { type: "string", description: "Script name to run (e.g., build, test, lint, start)" },
+        args: { type: "string", description: "Additional arguments to pass to the script (optional)" },
+      },
+      required: ["path", "script"],
+    },
+  },
+  // === Debugging Tools ===
+  {
+    name: "debug_logs",
+    description: "Read and analyze log files or console output for errors. Helps diagnose issues.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to log file or project folder" },
+        type: { type: "string", description: "Log type: npm, node, browser, server, custom (default: auto-detect)" },
+        lines: { type: "number", description: "Number of recent lines to analyze (default: 100)" },
+        filter: { type: "string", description: "Filter pattern (e.g., 'error', 'warn')" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "debug_port",
+    description: "Check if a port is in use and what process is using it. Helps resolve port conflicts.",
+    parameters: {
+      type: "object",
+      properties: {
+        port: { type: "number", description: "Port number to check" },
+        kill: { type: "boolean", description: "Kill the process using the port (default: false)" },
+      },
+      required: ["port"],
+    },
+  },
+  {
+    name: "debug_process",
+    description: "List running Node.js/npm processes. Useful for finding stuck dev servers.",
+    parameters: {
+      type: "object",
+      properties: {
+        filter: { type: "string", description: "Filter by process name (e.g., 'node', 'npm', 'next')" },
+        kill: { type: "boolean", description: "Kill matching processes (default: false)" },
+      },
+      required: [],
+    },
+  },
 ];
 
 export function getToolDeclarations(
@@ -765,9 +1124,17 @@ export function getToolDeclarations(
   declarations.push(...mcpTools);
   declarations.push(...integrationTools);
 
+  // Deduplicate by tool name (keep first occurrence)
+  const seen = new Set<string>();
+  const uniqueDeclarations = declarations.filter((t) => {
+    if (seen.has(t.name)) return false;
+    seen.add(t.name);
+    return true;
+  });
+
   return [
     {
-      functionDeclarations: declarations.map((t) => ({
+      functionDeclarations: uniqueDeclarations.map((t) => ({
         name: t.name,
         description: t.description,
         parameters: t.parameters,

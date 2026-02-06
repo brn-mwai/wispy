@@ -55,7 +55,7 @@ if (isGlobal || !process.env.npm_config_global) {
 
   console.log(dim("  ─────────────────────────────────────────────────────"));
   console.log(`  ${dim("Get Gemini API Key:")} ${sky("https://aistudio.google.com/apikey")}`);
-  console.log(`  ${dim("Documentation:")}      ${sky("https://github.com/brn-mwai/wispy")}`);
+  console.log(`  ${dim("Documentation:")}      ${sky("https://wispy.cc")}`);
   console.log(`  ${dim("Need help?")}          ${sky("https://github.com/brn-mwai/wispy/issues")}`);
   console.log(dim("  ─────────────────────────────────────────────────────\n"));
 }

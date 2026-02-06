@@ -397,6 +397,116 @@ export async function runSetupWizard(opts: {
         : MCP_SERVERS.filter((m) => m.default);
     }
 
+    // ── Step 7: Voice/TTS Setup (Edge TTS) ─────────────
+    console.clear();
+    console.log(WISPY_ASCII);
+    console.log(skyBold(`  ${chalk.hex('#FF6B6B')("▸")} Voice Setup (Natural TTS)\n`));
+    console.log(dim("  Enable natural text-to-speech for voice messages in Telegram."));
+    console.log(dim("  Using Microsoft Edge TTS - free, fast, and sounds very natural.\n"));
+    console.log(`  ${chalk.hex('#FF6B6B')("Features:")}`);
+    console.log(`  ${sky("•")} Multiple natural voices (male/female, various accents)`);
+    console.log(`  ${sky("•")} Fast generation (2-3 seconds)`);
+    console.log(`  ${sky("•")} No API key required`);
+    console.log(`  ${sky("•")} Works on any system (no GPU needed)`);
+    console.log("");
+
+    // Check if Edge TTS is installed
+    let voiceInstalled = false;
+    try {
+      const { execSync } = await import("child_process");
+      execSync("python -m edge_tts --version", { stdio: "pipe", timeout: 5000 });
+      voiceInstalled = true;
+    } catch {
+      voiceInstalled = false;
+    }
+
+    if (voiceInstalled) {
+      console.log(green("  ✓ Edge TTS is already installed!\n"));
+    } else {
+      console.log(yellowBright("  ⚠ Edge TTS not installed"));
+      console.log(dim("  Required for natural voice messages in Telegram.\n"));
+
+      const installChoice = await ask(rl, sky("  Install Edge TTS now? [Y/n]: "));
+
+      if (!installChoice.trim() || installChoice.trim().toLowerCase().startsWith("y")) {
+        console.log("");
+        console.log(dim("  Installing Edge TTS..."));
+
+        try {
+          const { execSync } = await import("child_process");
+          execSync("pip install edge-tts", {
+            stdio: "inherit",
+            timeout: 120000,
+          });
+          voiceInstalled = true;
+          console.log("");
+          console.log(green("  ✓ Edge TTS installed successfully!"));
+        } catch (installErr: any) {
+          console.log("");
+          console.log(yellowBright("  ⚠ Installation failed. You can install manually later:"));
+          console.log(sky("     pip install edge-tts"));
+        }
+      } else {
+        console.log(dim("\n  Skipped. Install later with: pip install edge-tts\n"));
+      }
+    }
+
+    // Keep variable name for backward compatibility
+    const chatterboxInstalled = voiceInstalled;
+
+    // Qwen3-TTS via HuggingFace Spaces (cloud-based, no local GPU needed)
+    let qwen3Installed = false;
+    try {
+      const { execSync } = await import("child_process");
+      execSync('python -c "from gradio_client import Client"', { stdio: "pipe", timeout: 10000 });
+      qwen3Installed = true;
+    } catch {
+      qwen3Installed = false;
+    }
+
+    console.log("");
+    console.log(chalk.hex('#FF6B6B')("  Optional: Qwen3-TTS (Premium Voice)"));
+    console.log(dim("  Best quality TTS via HuggingFace Spaces (cloud-based)."));
+    console.log(dim("  No local GPU needed - runs on HuggingFace servers!\n"));
+    console.log(`  ${sky("•")} 10 languages: English, Chinese, Japanese, Korean, etc.`);
+    console.log(`  ${sky("•")} 9 voices: Serena, Ryan, Vivian, Dylan, Aiden, etc.`);
+    console.log(`  ${sky("•")} Emotion & style control via natural language`);
+    console.log(`  ${sky("•")} Free to use (HuggingFace Spaces)`);
+    console.log("");
+
+    if (qwen3Installed) {
+      console.log(green("  ✓ Qwen3-TTS client is ready!\n"));
+    } else {
+      console.log(yellowBright("  ⚠ gradio_client not installed"));
+      console.log(dim("  Required for Qwen3-TTS cloud API.\n"));
+
+      const installChoice = await ask(rl, sky("  Install gradio_client now? [Y/n]: "));
+
+      if (!installChoice.trim() || installChoice.trim().toLowerCase().startsWith("y")) {
+        console.log("");
+        console.log(dim("  Installing gradio_client..."));
+
+        try {
+          const { execSync } = await import("child_process");
+          execSync("pip install gradio_client -q", {
+            stdio: "inherit",
+            timeout: 120000,
+          });
+          qwen3Installed = true;
+          console.log("");
+          console.log(green("  ✓ Qwen3-TTS client installed successfully!"));
+        } catch (installErr: any) {
+          console.log("");
+          console.log(yellowBright("  ⚠ Installation failed. You can install manually later:"));
+          console.log(sky("     pip install gradio_client"));
+        }
+      } else {
+        console.log(dim("\n  Skipped. Edge TTS will be used (still sounds great!).\n"));
+      }
+    }
+
+    await ask(rl, dim("\n  Press Enter to continue..."));
+
     rl.close();
 
     // ── Save config ──────────────────────────────────────
@@ -497,12 +607,18 @@ export async function runSetupWizard(opts: {
     const modeDisplay = autonomousMode
       ? chalk.yellow("⚡ Autonomous") + dim(" (auto-approve file/code ops)")
       : green("🛡️ Standard") + dim(" (requires approval)");
+    const voiceDisplay = qwen3Installed
+      ? green("✓ Qwen3-TTS") + dim(" (premium, multilingual)")
+      : (chatterboxInstalled
+          ? green("✓ Edge TTS") + dim(" (natural voice)")
+          : dim("Not installed"));
 
     console.log(`  ${dim("AI Provider:")}  ${aiDisplay}`);
     console.log(`  ${dim("Mode:")}         ${modeDisplay}`);
     console.log(`  ${dim("Theme:")}        ${themeDisplay}`);
     console.log(`  ${dim("Agents:")}       ${agentsDisplay}`);
     console.log(`  ${dim("Telegram:")}     ${telegramDisplay}`);
+    console.log(`  ${dim("Voice:")}        ${voiceDisplay}`);
     console.log(`  ${dim("MCP Servers:")}  ${mcpDisplay}`);
     console.log(`  ${dim("Integrations:")} ${intDisplay}`);
     console.log("");
@@ -520,6 +636,7 @@ export async function runSetupWizard(opts: {
     console.log(dim(`  • Get API Key: ${sky("https://aistudio.google.com/apikey")}`));
     console.log(dim(`  • Vertex AI:   ${sky("https://cloud.google.com/vertex-ai")}`));
     console.log(dim(`  • Telegram:    ${sky("https://t.me/BotFather")}`));
+    console.log(dim(`  • Qwen3-TTS:   ${sky("https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")}`));
     console.log("");
   } catch (err: any) {
     rl.close();

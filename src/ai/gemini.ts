@@ -735,7 +735,7 @@ export async function generateAgentic(
 ): Promise<GenerateResult & { allToolResults: Array<{ name: string; success: boolean; output: string; error?: string }> }> {
   const ai = getClient();
   const useNativeTools = supportsNativeTools(opts.model);
-  const MAX_LOOPS = 10;
+  const MAX_LOOPS = 50; // Increased from 10 to handle complex multi-tool tasks
 
   let allToolResults: Array<{ name: string; success: boolean; output: string; error?: string }> = [];
   let finalText = "";
@@ -1125,4 +1125,52 @@ export async function generateWithThinking(
   });
 
   return result.text;
+}
+
+/**
+ * Vertex AI with Google Search grounding
+ * Uses Google Search to ground responses in real-time data
+ */
+export async function vertexAIWithGrounding(
+  query: string,
+  options?: {
+    model?: string;
+    dynamicThreshold?: number;
+  }
+): Promise<string> {
+  if (!client) {
+    throw new Error("Gemini client not initialized");
+  }
+
+  const model = options?.model || "gemini-2.5-flash";
+
+  try {
+    // Use Gemini with grounded generation if available
+    const response = await client.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: query }] }],
+      config: {
+        // Enable Google Search grounding
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const text = response.text || "";
+
+    // Extract grounding metadata if available
+    const groundingMetadata = (response as any).candidates?.[0]?.groundingMetadata;
+
+    if (groundingMetadata?.searchEntryPoint?.renderedContent) {
+      return `${text}\n\n*Grounded with Google Search*`;
+    }
+
+    return text;
+  } catch (err) {
+    // Fallback to regular generation
+    const result = await generate({
+      model,
+      messages: [{ role: "user", content: `Using current information, ${query}` }],
+    });
+    return result.text;
+  }
 }

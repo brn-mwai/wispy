@@ -49,8 +49,8 @@ const program = new Command();
 
 program
   .name("wispy")
-  .description("Wispy — Autonomous AI Agent powered by Gemini 3")
-  .version("0.1.0");
+  .description("Wispy — Autonomous AI Agent powered by Gemini 2.5 with Thinking Levels")
+  .version("1.0.0");
 
 // === GATEWAY ===
 program
@@ -460,6 +460,91 @@ skills
     await runSkillWizard(SOUL_DIR);
   });
 
+// Alias: wispy skill (singular)
+const skill = program
+  .command("skill")
+  .description("Manage agent skills (alias for 'skills')");
+
+skill
+  .command("add")
+  .description("Install a skill from the catalog")
+  .argument("[name]", "Skill name (research, codegen, documents, web3, browser, cron, voice, images, a2a, content, twitter, chainlink)")
+  .option("--all", "Install all skills")
+  .action(async (name, opts) => {
+    const { SkillManager, displaySkillCatalog } = await import("./skill-manager.js");
+    const manager = new SkillManager(SOUL_DIR, RUNTIME_DIR);
+
+    if (opts.all) {
+      await manager.installAll();
+      return;
+    }
+
+    if (!name) {
+      displaySkillCatalog();
+      return;
+    }
+
+    await manager.install(name);
+  });
+
+skill
+  .command("remove")
+  .description("Remove an installed skill")
+  .argument("<name>", "Skill name to remove")
+  .action(async (name) => {
+    const { SkillManager } = await import("./skill-manager.js");
+    const manager = new SkillManager(SOUL_DIR, RUNTIME_DIR);
+    manager.remove(name);
+  });
+
+skill
+  .command("info")
+  .description("Show detailed info about a skill")
+  .argument("<name>", "Skill name")
+  .action(async (name) => {
+    const { SkillManager } = await import("./skill-manager.js");
+    const manager = new SkillManager(SOUL_DIR, RUNTIME_DIR);
+    manager.info(name);
+  });
+
+skill
+  .command("list")
+  .description("List all available skills")
+  .action(async () => {
+    const { SkillManager, displaySkillCatalog } = await import("./skill-manager.js");
+    displaySkillCatalog();
+  });
+
+// === SETUP INTEGRATION WIZARD ===
+program
+  .command("setup")
+  .description("Run setup wizard for Wispy or a specific integration")
+  .argument("[integration]", "Integration to setup (telegram, discord, notion, github, etc.)")
+  .option("--quick", "Quick setup with minimal prompts")
+  .action(async (integration, options) => {
+    if (integration) {
+      // Setup specific integration
+      const { IntegrationWizard } = await import("./integration-wizard.js");
+      const wizard = new IntegrationWizard(RUNTIME_DIR);
+      await wizard.setup(integration);
+    } else {
+      // Full setup wizard
+      const { runAutomatedSetup } = await import("./setup/automated-setup.js");
+      await runAutomatedSetup({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR });
+    }
+  });
+
+// === INTEGRATE COMMAND (alias for setup) ===
+program
+  .command("integrate")
+  .description("Setup an integration (alias for 'setup <integration>')")
+  .argument("<integration>", "Integration to setup")
+  .action(async (integration) => {
+    const { IntegrationWizard } = await import("./integration-wizard.js");
+    const wizard = new IntegrationWizard(RUNTIME_DIR);
+    await wizard.setup(integration);
+  });
+
 // === PAIRING ===
 const pairing = program
   .command("pairing")
@@ -625,16 +710,6 @@ program
       console.log(`  Memory DB:  ${existsSync(dbPath) ? "\x1b[32m✓\x1b[0m" : "not created"}`);
     }
     console.log();
-  });
-
-// === SETUP WIZARD ===
-program
-  .command("setup")
-  .description("Run the interactive setup wizard (configure API keys, channels, wallet)")
-  .option("--quick", "Quick setup with minimal prompts")
-  .action(async (options) => {
-    const { runAutomatedSetup } = await import("./setup/automated-setup.js");
-    await runAutomatedSetup({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR });
   });
 
 // === IMAGE GENERATION ===
@@ -919,23 +994,26 @@ integrations
   .command("list")
   .description("List all available integrations by category")
   .action(async () => {
-    const registry = await getIntegrationRegistry();
-    const status = registry.getStatus();
-    console.log(`\nIntegrations (${status.length}):\n`);
-    const byCategory = new Map<string, typeof status>();
-    for (const s of status) {
-      const list = byCategory.get(s.category) || [];
-      list.push(s);
-      byCategory.set(s.category, list);
-    }
-    for (const [cat, items] of byCategory) {
-      console.log(`  ${cat.toUpperCase()}`);
-      for (const item of items) {
-        const icon = item.status === "active" ? "\x1b[32m✓\x1b[0m" : "\x1b[2m○\x1b[0m";
-        console.log(`    ${icon} ${item.id} — ${item.name}`);
-      }
-      console.log();
-    }
+    const { displayIntegrationCatalog } = await import("./integration-wizard.js");
+    displayIntegrationCatalog(RUNTIME_DIR);
+  });
+
+integrations
+  .command("catalog")
+  .description("Show detailed integration catalog with setup instructions")
+  .action(async () => {
+    const { displayIntegrationCatalog } = await import("./integration-wizard.js");
+    displayIntegrationCatalog(RUNTIME_DIR);
+  });
+
+integrations
+  .command("setup")
+  .description("Run setup wizard for an integration")
+  .argument("<id>", "Integration ID")
+  .action(async (id) => {
+    const { IntegrationWizard } = await import("./integration-wizard.js");
+    const wizard = new IntegrationWizard(RUNTIME_DIR);
+    await wizard.setup(id);
   });
 
 integrations

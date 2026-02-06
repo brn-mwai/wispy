@@ -3,5 +3,11 @@ dist/
 .next/
 .env
 .env.local
+.env.*
 .wispy/
 *.log
+
+# Secrets / credentials
+gen-lang-client-*.json
+*.pem
+*.key

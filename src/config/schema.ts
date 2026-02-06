@@ -88,6 +88,15 @@ export interface WispyConfig {
     cdpUrl?: string;
     chromeExtension?: boolean;
   };
+  // Voice AI configuration
+  voice?: {
+    enabled: boolean;
+    model: "parler-tts" | "bark" | "melo-tts" | "speecht5" | "gemini" | "piper" | "auto";
+    voicePreset?: string;  // Voice name/description
+    language?: string;     // Language code (en, es, fr, etc.)
+    speed?: number;        // Speech rate (0.5-2.0)
+    replyWithVoice?: boolean; // Auto-reply with voice notes
+  };
   theme?: string;
   agents?: string[];
   integrations?: string[];

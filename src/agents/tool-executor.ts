@@ -1,4 +1,4 @@
-import { exec, spawn } from "child_process";
+import { exec, execSync, spawn } from "child_process";
 import { promisify } from "util";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import { resolve, dirname } from "path";
@@ -70,6 +70,14 @@ const DEV_COMMANDS_PATTERNS = [
   /^open\s+/,   // macOS open
 ];
 
+// Progress callback type for sending updates during tool execution
+export type ProgressCallback = (event: {
+  type: "tool_start" | "tool_complete" | "thinking" | "image_generated";
+  toolName?: string;
+  message?: string;
+  data?: unknown;
+}) => void | Promise<void>;
+
 export class ToolExecutor {
   private config: WispyConfig;
   private runtimeDir: string;
@@ -79,6 +87,7 @@ export class ToolExecutor {
   private mcpRegistry?: McpRegistry;
   private cronService?: CronService;
   private reminderService?: ReminderService;
+  private progressCallback?: ProgressCallback;
 
   constructor(
     config: WispyConfig,
@@ -94,6 +103,26 @@ export class ToolExecutor {
     this.memoryManager = memoryManager;
     this.integrationRegistry = integrationRegistry;
     this.mcpRegistry = mcpRegistry;
+  }
+
+  /**
+   * Set callback for progress notifications (used by Telegram visuals)
+   */
+  setProgressCallback(callback: ProgressCallback): void {
+    this.progressCallback = callback;
+  }
+
+  /**
+   * Emit progress event
+   */
+  private async emitProgress(event: Parameters<ProgressCallback>[0]): Promise<void> {
+    if (this.progressCallback) {
+      try {
+        await this.progressCallback(event);
+      } catch (err) {
+        log.debug("Progress callback error: %s", (err as Error).message);
+      }
+    }
   }
 
   /**
@@ -113,7 +142,15 @@ export class ToolExecutor {
   async execute(tool: ToolCall): Promise<ToolResult> {
     log.info("Executing tool: %s", tool.name);
 
+    // Emit tool start event for progress tracking
+    await this.emitProgress({
+      type: "tool_start",
+      toolName: tool.name,
+      message: `Using ${tool.name}...`,
+    });
+
     try {
+      let result: ToolResult;
       switch (tool.name) {
         case "bash":
           return this.executeBash(tool.args);
@@ -240,6 +277,69 @@ export class ToolExecutor {
           return this.executeLatexCompile(tool.args);
         case "research_report":
           return this.executeResearchReport(tool.args);
+        // === Telegram Document Delivery ===
+        case "send_document_to_telegram":
+          return this.executeSendDocumentToTelegram(tool.args);
+        case "send_progress_update":
+          return this.executeSendProgressUpdate(tool.args);
+        case "ask_user_confirmation":
+          return this.executeAskUserConfirmation(tool.args);
+        // === Enhanced File System ===
+        case "file_permissions":
+          return this.executeFilePermissions(tool.args);
+        case "send_link":
+          return this.executeSendLink(tool.args);
+        // === Grounding & Verification ===
+        case "verify_fact":
+          return this.executeVerifyFact(tool.args);
+        case "distinguish_task":
+          return this.executeDistinguishTask(tool.args);
+        // === Hugging Face ===
+        case "huggingface_inference":
+          return this.executeHuggingFaceInference(tool.args);
+        // === Natural Voice (Gemini TTS) ===
+        case "natural_voice_reply":
+          return this.executeNaturalVoiceReply(tool.args);
+        // === Multimodal Tools ===
+        case "multimodal_explain":
+          return this.executeMultimodalExplain(tool.args);
+        case "generate_diagram":
+          return this.executeGenerateDiagram(tool.args);
+        case "zip_and_send_project":
+          return this.executeZipAndSendProject(tool.args);
+        case "generate_document_with_visuals":
+          return this.executeGenerateDocumentWithVisuals(tool.args);
+        // === Desktop Screenshot & Recording ===
+        case "desktop_screenshot":
+          return this.executeDesktopScreenshot(tool.args);
+        case "screen_record":
+          return this.executeScreenRecord(tool.args);
+        // === Git & GitHub ===
+        case "git_init":
+          return this.executeGitInit(tool.args);
+        case "git_commit":
+          return this.executeGitCommit(tool.args);
+        case "git_push":
+          return this.executeGitPush(tool.args);
+        case "git_status":
+          return this.executeGitStatus(tool.args);
+        // === Vercel Deployment ===
+        case "vercel_deploy":
+          return this.executeVercelDeploy(tool.args);
+        case "vercel_list":
+          return this.executeVercelList(tool.args);
+        // === NPM/Package Management ===
+        case "npm_install":
+          return this.executeNpmInstall(tool.args);
+        case "npm_run":
+          return this.executeNpmRun(tool.args);
+        // === Debugging ===
+        case "debug_logs":
+          return this.executeDebugLogs(tool.args);
+        case "debug_port":
+          return this.executeDebugPort(tool.args);
+        case "debug_process":
+          return this.executeDebugProcess(tool.args);
         default:
           // Try MCP servers first
           if (this.mcpRegistry) {
@@ -508,6 +608,7 @@ export class ToolExecutor {
     const prompt = String(args.prompt || "");
     if (!prompt) return { success: false, output: "", error: "No prompt provided" };
 
+    // Support 1-4 variations (default 1, can specify up to 4)
     const count = Math.min(Math.max(Number(args.count) || 1, 1), 4);
     const aspectRatio = String(args.aspectRatio || "1:1");
 
@@ -539,11 +640,34 @@ export class ToolExecutor {
         const imageBuffer = Buffer.from(result.images[i].base64, "base64");
         const savedPath = saveMedia(this.runtimeDir, "outgoing", filename, imageBuffer);
         savedPaths.push(savedPath);
+
+        // Emit progress event for visual feedback system
+        await this.emitProgress({
+          type: "image_generated",
+          toolName: "image_generate",
+          message: `Generated image: ${prompt.slice(0, 50)}...`,
+          data: {
+            buffer: imageBuffer,
+            prompt,
+            imageId: `img_${timestamp}_${i}`,
+            path: savedPath,
+          },
+        });
+
+        // Send to Telegram if chat context available
+        if (this.currentChatContext?.sendImage) {
+          try {
+            const caption = count > 1 ? `Image ${i + 1}/${count}: ${prompt.slice(0, 50)}` : undefined;
+            await this.currentChatContext.sendImage(savedPath, caption);
+          } catch (e) {
+            log.warn("Failed to send image to chat: %s", (e as Error).message);
+          }
+        }
       }
 
       return {
         success: true,
-        output: `Generated ${savedPaths.length} image(s):\n${savedPaths.join("\n")}`,
+        output: `Generated ${savedPaths.length} image${savedPaths.length > 1 ? " variations" : ""}:\n${savedPaths.join("\n")}`,
       };
     } catch (err: any) {
       // Fallback to Unsplash
@@ -692,9 +816,9 @@ export class ToolExecutor {
   }
 
   // Store the current chat context for sending images back
-  private currentChatContext?: { channel: string; peerId: string; sendImage?: (path: string, caption?: string) => Promise<void> };
+  private currentChatContext?: { channel: string; peerId: string; chatId?: string; sendImage?: (path: string, caption?: string) => Promise<void> };
 
-  public setChatContext(ctx: { channel: string; peerId: string; sendImage?: (path: string, caption?: string) => Promise<void> }) {
+  public setChatContext(ctx: { channel: string; peerId: string; chatId?: string; sendImage?: (path: string, caption?: string) => Promise<void> }) {
     this.currentChatContext = ctx;
   }
 
@@ -885,16 +1009,44 @@ export class ToolExecutor {
     }
 
     try {
-      const { textToSpeech, getTempVoicePath } = await import("../voice/tts.js");
+      const { join } = await import("path");
+      const voiceDir = join(this.runtimeDir, "voice");
 
-      const outputPath = getTempVoicePath(this.runtimeDir);
-      const audioPath = await textToSpeech(text, outputPath, { persona: persona as any });
+      // Keep text short for faster generation
+      const shortText = text.length > 300 ? text.slice(0, 300) + "..." : text;
+
+      let audioPath: string | null = null;
+
+      // === PRIORITY 1: Chatterbox (fastest, most natural) ===
+      try {
+        const { generateRealisticSpeech } = await import("../voice/realistic-tts.js");
+        const result = await generateRealisticSpeech(shortText, voiceDir, {
+          model: "chatterbox",  // Force Chatterbox
+          emotion: "friendly",
+        });
+        if (result) {
+          audioPath = result.audioPath;
+          log.info("Voice generated with Chatterbox");
+        }
+      } catch (e) {
+        log.debug("Chatterbox failed, trying fallback");
+      }
+
+      // === PRIORITY 2: Quick fallback - basic Google TTS (fastest) ===
+      if (!audioPath) {
+        try {
+          const { textToSpeech, getTempVoicePath } = await import("../voice/tts.js");
+          const outputPath = getTempVoicePath(this.runtimeDir);
+          audioPath = await textToSpeech(shortText, outputPath, { persona: persona as any });
+          if (audioPath) log.info("Voice generated with Google TTS");
+        } catch {}
+      }
 
       if (!audioPath) {
         return {
           success: false,
           output: "",
-          error: "Voice synthesis failed. Check network connectivity to Google TTS service.",
+          error: "Voice synthesis failed. Check network connectivity.",
         };
       }
 
@@ -902,17 +1054,16 @@ export class ToolExecutor {
       if (this.voiceCallback) {
         const sent = await this.voiceCallback(audioPath, text);
         if (sent) {
-          return { success: true, output: `🔊 Voice message sent (${persona} voice)` };
+          return { success: true, output: `🔊 Voice message sent` };
         }
       }
 
-      // Return the path if no callback
       return {
         success: true,
-        output: `🔊 Voice audio generated: ${audioPath}\nText: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`,
+        output: `🔊 Voice generated: ${audioPath}`,
       };
     } catch (err: any) {
-      return { success: false, output: "", error: `Voice synthesis error: ${err.message}` };
+      return { success: false, output: "", error: `Voice error: ${err.message}` };
     }
   }
 
@@ -1125,18 +1276,86 @@ export class ToolExecutor {
   private async executeLocalhostServe(args: Record<string, unknown>): Promise<ToolResult> {
     const directory = String(args.directory || process.cwd());
     const port = Number(args.port || 3000);
+    const { join } = await import("path");
 
     try {
-      // Use a simple http-server via spawn (non-blocking)
+      // CRITICAL: Check if this is an npm project - if so, ALWAYS use npm run dev
+      // Never use static file serving for projects with package.json
+      const packageJsonPath = join(directory, "package.json");
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+          const scripts = packageJson.scripts || {};
+
+          // If there's ANY dev or start script, use npm
+          if (scripts.dev || scripts.start) {
+            const devCommand = scripts.dev ? "dev" : "start";
+
+            log.info(`Detected npm project with '${devCommand}' script - using npm run ${devCommand}`);
+
+            // Check if node_modules exists - if not, run npm install first
+            const nodeModulesPath = join(directory, "node_modules");
+            if (!existsSync(nodeModulesPath)) {
+              log.info("node_modules not found, running npm install first...");
+              try {
+                execSync("npm install", {
+                  cwd: directory,
+                  stdio: "pipe",
+                  timeout: 180000, // 3 minute timeout
+                });
+                log.info("npm install completed successfully");
+              } catch (installErr: any) {
+                log.warn("npm install failed: " + installErr.message);
+                // Continue anyway - maybe deps are bundled
+              }
+            }
+
+            // Start the dev server
+            const proc = spawn("npm", ["run", devCommand], {
+              cwd: directory,
+              detached: true,
+              stdio: "ignore",
+              shell: true,
+              env: { ...process.env, PORT: String(port) },
+            });
+            proc.unref();
+
+            // Wait for server to start
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            return {
+              success: true,
+              output: `Started npm development server:\n` +
+                `  URL: http://localhost:${port}\n` +
+                `  Directory: ${directory}\n` +
+                `  Command: npm run ${devCommand}\n` +
+                `  PID: ${proc.pid}\n\n` +
+                `IMPORTANT: This is running 'npm run ${devCommand}', NOT a static file server.\n` +
+                `The app should compile and hot-reload automatically.`,
+            };
+          }
+        } catch (e: any) {
+          log.warn("Failed to parse package.json: " + e.message);
+        }
+      }
+
+      // ONLY use static serve for pure HTML/CSS/JS projects (no package.json)
+      log.info("No package.json found, using static file server");
       const proc = spawn("npx", ["serve", "-l", String(port), directory], {
         detached: true,
         stdio: "ignore",
+        shell: true,
       });
       proc.unref();
 
       return {
         success: true,
-        output: `Started HTTP server:\n  URL: http://localhost:${port}\n  Directory: ${directory}\n  PID: ${proc.pid}`,
+        output: `Started STATIC file server (for plain HTML only):\n` +
+          `  URL: http://localhost:${port}\n` +
+          `  Directory: ${directory}\n` +
+          `  PID: ${proc.pid}\n\n` +
+          `WARNING: This is a static file server that shows directory listings.\n` +
+          `If you see 'Index of' in your browser, the project needs 'npm run dev' instead.`,
       };
     } catch (err: any) {
       // Fallback to simple node http server
@@ -2593,35 +2812,70 @@ export default ${componentName};
       // Check if it's an npm project
       const packageJsonPath = join(fullPath, "package.json");
       if (existsSync(packageJsonPath)) {
-        // Start npm dev server in background
-        const proc = spawn("npm", ["run", "dev"], {
+        // Read package.json to find the right dev command
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+        const scripts = packageJson.scripts || {};
+
+        // Determine which command to run (dev, start, or build+start)
+        let devCommand = "dev";
+        if (!scripts.dev && scripts.start) {
+          devCommand = "start";
+        }
+
+        // CRITICAL: Check if node_modules exists - if not, run npm install first
+        const nodeModulesPath = join(fullPath, "node_modules");
+        if (!existsSync(nodeModulesPath)) {
+          log.info("node_modules not found, running npm install first...");
+          try {
+            execSync("npm install", {
+              cwd: fullPath,
+              stdio: "pipe",
+              timeout: 180000, // 3 minute timeout for install
+            });
+            log.info("npm install completed successfully");
+          } catch (installErr: any) {
+            log.warn("npm install warning: " + installErr.message);
+            // Continue anyway - try to run dev server
+          }
+        }
+
+        // Start npm dev server in background with shell: true for Windows
+        const proc = spawn("npm", ["run", devCommand], {
           cwd: fullPath,
           detached: true,
           stdio: "ignore",
+          shell: true, // Required for Windows
           env: { ...process.env, PORT: String(port) },
         });
         proc.unref();
 
+        // Wait longer for server to start (especially after install)
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
         return {
           success: true,
-          output: `Started dev server for ${projectPath}\n` +
+          output: `Started npm development server for ${projectPath}\n` +
             `URL: http://localhost:${port}\n` +
+            `Command: npm run ${devCommand}\n` +
             `PID: ${proc.pid}\n\n` +
-            `The server is running in the background.`,
+            `IMPORTANT: This is 'npm run ${devCommand}' (NOT static file server).\n` +
+            `The app will compile and hot-reload. Wait a few seconds then open the URL.`,
         };
       }
 
-      // For static HTML projects, use serve
+      // For static HTML projects (no package.json), use serve
+      log.info("No package.json found, using static server");
       const proc = spawn("npx", ["serve", "-l", String(port)], {
         cwd: fullPath,
         detached: true,
         stdio: "ignore",
+        shell: true, // Required for Windows
       });
       proc.unref();
 
       return {
         success: true,
-        output: `Started static server for ${projectPath}\n` +
+        output: `Started STATIC server for ${projectPath} (no package.json found)\n` +
           `URL: http://localhost:${port}\n` +
           `PID: ${proc.pid}`,
       };
@@ -2847,4 +3101,1431 @@ export default ${componentName};
       return { success: false, output: "", error: `Research report creation failed: ${err.message}` };
     }
   }
+
+  // === Telegram Document Delivery Methods ===
+
+  private async executeSendDocumentToTelegram(args: Record<string, unknown>): Promise<ToolResult> {
+    const filePath = String(args.filePath || "");
+    const caption = String(args.caption || "");
+    const withVoice = Boolean(args.withVoice);
+    const voiceText = String(args.voiceText || "");
+
+    if (!filePath) {
+      return { success: false, output: "", error: "filePath is required" };
+    }
+
+    if (!existsSync(filePath)) {
+      return { success: false, output: "", error: `File not found: ${filePath}` };
+    }
+
+    try {
+      const chatId = this.currentChatContext?.chatId;
+      if (!chatId) {
+        return { success: false, output: "", error: "No active Telegram chat. Use this tool only in Telegram context." };
+      }
+
+      const { sendPdf, sendDocumentWithVoice } = await import("../documents/telegram-delivery.js");
+
+      if (withVoice && voiceText) {
+        const success = await sendDocumentWithVoice(chatId, filePath, voiceText, { caption });
+        return success
+          ? { success: true, output: `Document sent with voice note to Telegram chat ${chatId}` }
+          : { success: false, output: "", error: "Failed to send document with voice" };
+      } else {
+        const { basename } = await import("path");
+        const success = await sendPdf(chatId, filePath, {
+          title: basename(filePath),
+          description: caption,
+          generatedWith: "Wispy AI",
+        });
+        return success
+          ? { success: true, output: `Document sent to Telegram chat ${chatId}` }
+          : { success: false, output: "", error: "Failed to send document" };
+      }
+    } catch (err: any) {
+      return { success: false, output: "", error: `Send document error: ${err.message}` };
+    }
+  }
+
+  private async executeSendProgressUpdate(args: Record<string, unknown>): Promise<ToolResult> {
+    const type = String(args.type || "update") as any;
+    const message = String(args.message || "");
+    const context = String(args.context || "");
+    const buttonsStr = String(args.buttons || "");
+    const voiceNote = Boolean(args.voiceNote);
+
+    if (!message) {
+      return { success: false, output: "", error: "message is required" };
+    }
+
+    try {
+      const userId = this.currentChatContext?.peerId;
+      if (!userId) {
+        return { success: false, output: "", error: "No active user context" };
+      }
+
+      const { sendThought } = await import("../trust/progress-notifier.js");
+
+      let buttons;
+      if (buttonsStr) {
+        try {
+          buttons = JSON.parse(buttonsStr);
+        } catch {}
+      }
+
+      const success = await sendThought(userId, type, message, { context, buttons, voiceNote });
+      return success
+        ? { success: true, output: `Progress update sent: ${type}` }
+        : { success: false, output: "", error: "Failed to send progress update" };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Progress update error: ${err.message}` };
+    }
+  }
+
+  private async executeAskUserConfirmation(args: Record<string, unknown>): Promise<ToolResult> {
+    const question = String(args.question || "");
+    const context = String(args.context || "");
+    const approveText = String(args.approveText || "");
+    const denyText = String(args.denyText || "");
+    const timeout = Number(args.timeout || 5 * 60 * 1000);
+
+    if (!question) {
+      return { success: false, output: "", error: "question is required" };
+    }
+
+    try {
+      const userId = this.currentChatContext?.peerId;
+      if (!userId) {
+        return { success: true, output: "No user context - auto-approving" };
+      }
+
+      const { askConfirmation } = await import("../trust/progress-notifier.js");
+
+      const approved = await askConfirmation(userId, question, {
+        context,
+        approveText: approveText || undefined,
+        denyText: denyText || undefined,
+        timeout,
+      });
+
+      return {
+        success: true,
+        output: approved ? "User approved: YES" : "User denied: NO",
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Confirmation error: ${err.message}` };
+    }
+  }
+
+  // === Enhanced File System Methods ===
+
+  private async executeFilePermissions(args: Record<string, unknown>): Promise<ToolResult> {
+    const path = String(args.path || "");
+    const action = String(args.action || "check");
+
+    if (!path) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const fs = await import("fs");
+      const { constants } = fs;
+
+      if (action === "check") {
+        const exists = existsSync(path);
+        if (!exists) {
+          return { success: true, output: `Path does not exist: ${path}\nCan create: Yes (parent dir exists: ${existsSync(dirname(path))})` };
+        }
+
+        let canRead = false;
+        let canWrite = false;
+        try {
+          fs.accessSync(path, constants.R_OK);
+          canRead = true;
+        } catch {}
+        try {
+          fs.accessSync(path, constants.W_OK);
+          canWrite = true;
+        } catch {}
+
+        const stat = fs.statSync(path);
+        return {
+          success: true,
+          output: `Path: ${path}\nExists: Yes\nType: ${stat.isDirectory() ? "Directory" : "File"}\nReadable: ${canRead ? "Yes" : "No"}\nWritable: ${canWrite ? "Yes" : "No"}\nSize: ${stat.size} bytes`,
+        };
+      }
+
+      // For grant actions, we just report what would happen (actual chmod is too dangerous)
+      return {
+        success: true,
+        output: `Permission action '${action}' noted. In sandboxed mode, use workspace directory for full access: ${resolve(this.runtimeDir, "workspace")}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Permission check error: ${err.message}` };
+    }
+  }
+
+  private async executeSendLink(args: Record<string, unknown>): Promise<ToolResult> {
+    const url = String(args.url || "");
+    const title = String(args.title || "");
+    const description = String(args.description || "");
+    const disablePreview = Boolean(args.disablePreview);
+
+    if (!url) {
+      return { success: false, output: "", error: "url is required" };
+    }
+
+    try {
+      const chatId = this.currentChatContext?.chatId;
+      if (!chatId) {
+        return { success: true, output: `Link: ${url}${title ? `\nTitle: ${title}` : ""}${description ? `\nDescription: ${description}` : ""}` };
+      }
+
+      const { sendTelegramMessage } = await import("../channels/telegram/adapter.js");
+
+      let message = title ? `*${title}*\n\n` : "";
+      message += url;
+      if (description) message += `\n\n_${description}_`;
+
+      const success = await sendTelegramMessage(chatId, message);
+      return success
+        ? { success: true, output: `Link sent to Telegram: ${url}` }
+        : { success: false, output: "", error: "Failed to send link" };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Send link error: ${err.message}` };
+    }
+  }
+
+  // === Grounding & Verification Methods (Anti-Hallucination) ===
+
+  private async executeVerifyFact(args: Record<string, unknown>): Promise<ToolResult> {
+    const claim = String(args.claim || "");
+    const source = String(args.source || "");
+
+    if (!claim) {
+      return { success: false, output: "", error: "claim is required" };
+    }
+
+    try {
+      // Use Google Search grounding for fact verification
+      const { vertexAIWithGrounding } = await import("../ai/gemini.js");
+
+      const query = source
+        ? `Verify this claim against ${source}: "${claim}"`
+        : `Verify this claim with current sources: "${claim}"`;
+
+      const result = await vertexAIWithGrounding(query);
+
+      return {
+        success: true,
+        output: `**Fact Verification**\n\nClaim: "${claim}"\n\n${result}\n\n*Grounded with Google Search*`,
+      };
+    } catch (err: any) {
+      // Fallback to regular web search
+      try {
+        const searchResult = await this.executeWebSearch({ query: claim });
+        return {
+          success: true,
+          output: `**Fact Check (Web Search)**\n\nClaim: "${claim}"\n\n${searchResult.output}`,
+        };
+      } catch {
+        return { success: false, output: "", error: `Fact verification error: ${err.message}` };
+      }
+    }
+  }
+
+  private async executeDistinguishTask(args: Record<string, unknown>): Promise<ToolResult> {
+    const newTaskName = String(args.newTaskName || "");
+    const newTaskContext = String(args.newTaskContext || "");
+    const previousTaskSummary = String(args.previousTaskSummary || "");
+
+    if (!newTaskName || !newTaskContext) {
+      return { success: false, output: "", error: "newTaskName and newTaskContext are required" };
+    }
+
+    // Create a clear task boundary
+    const taskBoundary = `
+════════════════════════════════════════
+📋 TASK BOUNDARY: NEW TASK STARTING
+════════════════════════════════════════
+
+${previousTaskSummary ? `Previous Task Summary:\n${previousTaskSummary}\n\n---\n\n` : ""}**New Task:** ${newTaskName}
+
+**Context & Requirements:**
+${newTaskContext}
+
+**Ground Rules:**
+- Focus ONLY on this task
+- Do NOT hallucinate features/APIs not in context
+- Verify facts before stating them
+- Ask for clarification if requirements are unclear
+════════════════════════════════════════
+`;
+
+    // Also save to memory for context
+    try {
+      if (this.memoryManager) {
+        await this.memoryManager.addMemory(
+          `Task started: ${newTaskName} - ${newTaskContext.slice(0, 200)}`,
+          "task_boundary",
+          undefined,
+          { importance: 0.9 }
+        );
+      }
+    } catch {}
+
+    return {
+      success: true,
+      output: taskBoundary,
+    };
+  }
+
+  // === Hugging Face Integration ===
+
+  private async executeHuggingFaceInference(args: Record<string, unknown>): Promise<ToolResult> {
+    const model = String(args.model || "");
+    const input = String(args.input || "");
+    const task = String(args.task || "text-generation");
+    const parametersStr = String(args.parameters || "{}");
+
+    if (!model || !input) {
+      return { success: false, output: "", error: "model and input are required" };
+    }
+
+    try {
+      const HF_API_KEY = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+
+      if (!HF_API_KEY) {
+        return {
+          success: false,
+          output: "",
+          error: "HUGGINGFACE_API_KEY or HF_TOKEN environment variable not set. Get one at https://huggingface.co/settings/tokens",
+        };
+      }
+
+      let parameters = {};
+      try {
+        parameters = JSON.parse(parametersStr);
+      } catch {}
+
+      const response = await fetch(
+        `https://api-inference.huggingface.co/models/${model}`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${HF_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: input,
+            parameters,
+            options: { wait_for_model: true },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return { success: false, output: "", error: `HuggingFace API error: ${response.status} - ${errorText}` };
+      }
+
+      const result = await response.json();
+      const output = typeof result === "string"
+        ? result
+        : JSON.stringify(result, null, 2);
+
+      return {
+        success: true,
+        output: `**HuggingFace Inference**\nModel: ${model}\nTask: ${task}\n\n${output}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `HuggingFace inference error: ${err.message}` };
+    }
+  }
+
+  // === Natural Voice (Gemini Native TTS) ===
+
+  private async executeNaturalVoiceReply(args: Record<string, unknown>): Promise<ToolResult> {
+    const text = String(args.text || "");
+    const voice = String(args.voice || "Kore");
+    const sendToChat = args.sendToChat !== false;
+
+    if (!text) {
+      return { success: false, output: "", error: "text is required" };
+    }
+
+    try {
+      const { join } = await import("path");
+      const { existsSync, mkdirSync } = await import("fs");
+
+      const voiceDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "voice-output");
+      if (!existsSync(voiceDir)) {
+        mkdirSync(voiceDir, { recursive: true });
+      }
+
+      // Use Gemini's native TTS (most natural)
+      const { generateNaturalVoice } = await import("../core/multimodal-engine.js");
+      const audioPath = await generateNaturalVoice(text, voiceDir, { voice });
+
+      if (!audioPath) {
+        return { success: false, output: "", error: "Failed to generate voice" };
+      }
+
+      // Send to chat
+      if (sendToChat && this.currentChatContext?.chatId) {
+        try {
+          const { getTelegramBot } = await import("../documents/telegram-delivery.js");
+          const bot = getTelegramBot();
+          if (bot) {
+            const { InputFile } = await import("grammy");
+            const { createReadStream } = await import("fs");
+            await bot.api.sendVoice(
+              this.currentChatContext.chatId,
+              new InputFile(createReadStream(audioPath))
+            );
+          }
+        } catch (sendErr: any) {
+          log.warn("Failed to send voice: %s", sendErr.message);
+        }
+      }
+
+      return {
+        success: true,
+        output: `Natural voice generated and sent!\nVoice: ${voice}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Voice generation failed: ${err.message}` };
+    }
+  }
+
+  // === Multimodal Tools ===
+
+  private async executeMultimodalExplain(args: Record<string, unknown>): Promise<ToolResult> {
+    const topic = String(args.topic || "");
+    const includeVisuals = args.includeVisuals !== false;
+    const includeAudio = Boolean(args.includeAudio);
+    const style = String(args.style || "educational") as any;
+
+    if (!topic) {
+      return { success: false, output: "", error: "topic is required" };
+    }
+
+    try {
+      const { join } = await import("path");
+      const outputDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "multimodal");
+
+      const { generateMultimodalExplanation } = await import("../core/multimodal-engine.js");
+      const result = await generateMultimodalExplanation(topic, outputDir, {
+        includeVisuals,
+        includeAudio,
+        style,
+      });
+
+      // Send results to chat
+      if (this.currentChatContext?.chatId) {
+        const { getTelegramBot } = await import("../documents/telegram-delivery.js");
+        const bot = getTelegramBot();
+
+        if (bot && result.images && result.images.length > 0) {
+          const { InputFile } = await import("grammy");
+          const { readFileSync } = await import("fs");
+          for (const img of result.images) {
+            const buffer = readFileSync(img.path);
+            await bot.api.sendPhoto(
+              this.currentChatContext.chatId,
+              new InputFile(buffer, "diagram.png"),
+              { caption: img.caption }
+            );
+          }
+        }
+
+        if (bot && result.audio) {
+          const { InputFile } = await import("grammy");
+          const { createReadStream } = await import("fs");
+          await bot.api.sendVoice(
+            this.currentChatContext.chatId,
+            new InputFile(createReadStream(result.audio.path))
+          );
+        }
+      }
+
+      return {
+        success: true,
+        output: result.text || "Explanation generated with visuals.",
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Multimodal generation failed: ${err.message}` };
+    }
+  }
+
+  private async executeGenerateDiagram(args: Record<string, unknown>): Promise<ToolResult> {
+    const concept = String(args.concept || "");
+    const type = String(args.type || "concept") as any;
+    const sendToChat = args.sendToChat !== false;
+
+    if (!concept) {
+      return { success: false, output: "", error: "concept is required" };
+    }
+
+    try {
+      const { join } = await import("path");
+      const outputDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "diagrams");
+
+      const { generateDiagram } = await import("../core/multimodal-engine.js");
+      const imagePath = await generateDiagram(concept, outputDir, type);
+
+      if (!imagePath) {
+        return { success: false, output: "", error: "Failed to generate diagram" };
+      }
+
+      if (sendToChat && this.currentChatContext?.chatId) {
+        const { getTelegramBot } = await import("../documents/telegram-delivery.js");
+        const bot = getTelegramBot();
+        if (bot) {
+          const { InputFile } = await import("grammy");
+          const { readFileSync } = await import("fs");
+          const buffer = readFileSync(imagePath);
+          await bot.api.sendPhoto(
+            this.currentChatContext.chatId,
+            new InputFile(buffer, "diagram.png"),
+            { caption: `📊 Diagram: ${concept}` }
+          );
+        }
+      }
+
+      return {
+        success: true,
+        output: `Diagram generated: ${imagePath}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Diagram generation failed: ${err.message}` };
+    }
+  }
+
+  private async executeZipAndSendProject(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.projectPath || "");
+    const zipName = String(args.zipName || `project_${Date.now()}.zip`);
+
+    if (!projectPath) {
+      return { success: false, output: "", error: "projectPath is required" };
+    }
+
+    try {
+      const { existsSync } = await import("fs");
+      const { join, basename } = await import("path");
+
+      if (!existsSync(projectPath)) {
+        return { success: false, output: "", error: `Project path not found: ${projectPath}` };
+      }
+
+      const outputDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "exports");
+      const { mkdirSync } = await import("fs");
+      if (!existsSync(outputDir)) {
+        mkdirSync(outputDir, { recursive: true });
+      }
+
+      const zipPath = join(outputDir, zipName.endsWith(".zip") ? zipName : `${zipName}.zip`);
+
+      const { createProjectZip } = await import("../core/multimodal-engine.js");
+      const result = await createProjectZip(projectPath, zipPath);
+
+      if (!result) {
+        return { success: false, output: "", error: "Failed to create zip" };
+      }
+
+      // Send to Telegram
+      if (this.currentChatContext?.chatId) {
+        const { sendDocument } = await import("../documents/telegram-delivery.js");
+        await sendDocument(this.currentChatContext.chatId, zipPath, {
+          caption: `📦 Project: ${basename(projectPath)}`,
+        });
+      }
+
+      return {
+        success: true,
+        output: `Project zipped and sent: ${zipPath}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Zip failed: ${err.message}` };
+    }
+  }
+
+  private async executeGenerateDocumentWithVisuals(args: Record<string, unknown>): Promise<ToolResult> {
+    const title = String(args.title || "");
+    const content = String(args.content || "");
+    const generateDiagramFlag = args.generateDiagram !== false;
+    const diagramPrompt = String(args.diagramPrompt || title);
+
+    if (!title || !content) {
+      return { success: false, output: "", error: "title and content are required" };
+    }
+
+    try {
+      const { join } = await import("path");
+      const { existsSync, mkdirSync } = await import("fs");
+
+      const outputDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "documents");
+      if (!existsSync(outputDir)) {
+        mkdirSync(outputDir, { recursive: true });
+      }
+
+      let imagePath: string | null = null;
+
+      // Generate diagram if requested
+      if (generateDiagramFlag) {
+        const { generateDiagram } = await import("../core/multimodal-engine.js");
+        imagePath = await generateDiagram(diagramPrompt, outputDir, "concept");
+      }
+
+      // Generate LaTeX with image
+      if (imagePath) {
+        const { generateLatexWithImage } = await import("../core/multimodal-engine.js");
+        const texPath = await generateLatexWithImage(title, content, imagePath, `Diagram: ${title}`, outputDir);
+
+        if (texPath) {
+          // Compile to PDF
+          const { compileLatexToPdf } = await import("../documents/latex.js");
+          const pdfPath = await compileLatexToPdf(texPath, outputDir);
+
+          if (pdfPath && this.currentChatContext?.chatId) {
+            const { sendPdf } = await import("../documents/telegram-delivery.js");
+            await sendPdf(this.currentChatContext.chatId, pdfPath, {
+              title,
+              description: "Document with auto-generated diagram",
+              generatedWith: "Wispy AI",
+            });
+
+            return {
+              success: true,
+              output: `Document generated with diagram: ${pdfPath}`,
+            };
+          }
+        }
+      }
+
+      return {
+        success: false,
+        output: "",
+        error: "Failed to generate document with visuals",
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Document generation failed: ${err.message}` };
+    }
+  }
+
+  // === Legacy Realistic Voice (fallback) ===
+
+  private async executeRealisticVoiceReply(args: Record<string, unknown>): Promise<ToolResult> {
+    const text = String(args.text || "");
+    const model = String(args.model || "auto") as any;
+    const voice = String(args.voice || "assistant");
+    const sendToChat = args.sendToChat !== false;
+
+    if (!text) {
+      return { success: false, output: "", error: "text is required" };
+    }
+
+    try {
+      const { join } = await import("path");
+      const { existsSync, mkdirSync } = await import("fs");
+
+      const voiceDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "voice-output");
+      if (!existsSync(voiceDir)) {
+        mkdirSync(voiceDir, { recursive: true });
+      }
+
+      // Try realistic TTS from Hugging Face (conversational mode)
+      const { generateVoiceForTelegram, isHuggingFaceTTSAvailable } = await import("../voice/realistic-tts.js");
+
+      let audioPath: string | null = null;
+
+      if (isHuggingFaceTTSAvailable()) {
+        // Use conversational settings for natural speech
+        audioPath = await generateVoiceForTelegram(text, voiceDir, {
+          model: model as any,
+          voice: voice || "friendly",
+          emotion: "friendly",
+          conversational: true,
+        });
+      }
+
+      // Fallback to Gemini or local TTS
+      if (!audioPath) {
+        const { generateVoiceWithGemini } = await import("../cli/voice/tts.js");
+        audioPath = await generateVoiceWithGemini(text, voiceDir);
+      }
+
+      if (!audioPath) {
+        return { success: false, output: "", error: "Failed to generate voice - no TTS engine available" };
+      }
+
+      // Send to chat if requested
+      if (sendToChat && this.currentChatContext?.chatId) {
+        try {
+          const { getTelegramBot } = await import("../documents/telegram-delivery.js");
+          const bot = getTelegramBot();
+          if (bot) {
+            const { InputFile } = await import("grammy");
+            const { createReadStream } = await import("fs");
+            await bot.api.sendVoice(
+              this.currentChatContext.chatId,
+              new InputFile(createReadStream(audioPath)),
+              { caption: "🎤 Voice reply" }
+            );
+          }
+        } catch (sendErr: any) {
+          log.warn("Failed to send voice to chat: %s", sendErr.message);
+        }
+      }
+
+      return {
+        success: true,
+        output: `Voice generated!\nPath: ${audioPath}\nModel: ${model}\nVoice: ${voice}${sendToChat ? "\nSent to chat: Yes" : ""}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Voice generation failed: ${err.message}` };
+    }
+  }
+
+  // === Desktop Screenshot & Recording ===
+
+  private async executeDesktopScreenshot(args: Record<string, unknown>): Promise<ToolResult> {
+    const filename = String(args.filename || `screenshot_${Date.now()}.png`);
+    const region = String(args.region || "full");
+    const monitor = args.monitor !== undefined ? Number(args.monitor) : 0;
+    const sendToChat = Boolean(args.sendToChat);
+
+    try {
+      const { join } = await import("path");
+      const { execSync } = await import("child_process");
+      const { existsSync, mkdirSync } = await import("fs");
+
+      // Create screenshots directory
+      const screenshotDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "screenshots");
+      if (!existsSync(screenshotDir)) {
+        mkdirSync(screenshotDir, { recursive: true });
+      }
+
+      const outputPath = join(screenshotDir, filename);
+      const platform = process.platform;
+
+      if (platform === "win32") {
+        // Windows: Use PowerShell with .NET
+        const psScript = region === "active"
+          ? `
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $screen = [System.Windows.Forms.Screen]::AllScreens[${monitor}]
+            $bounds = $screen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save('${outputPath.replace(/\\/g, "\\\\")}')
+            $graphics.Dispose()
+            $bitmap.Dispose()
+          `
+          : `
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $screens = [System.Windows.Forms.Screen]::AllScreens
+            $screen = $screens[${monitor}]
+            $bounds = $screen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save('${outputPath.replace(/\\/g, "\\\\")}')
+            $graphics.Dispose()
+            $bitmap.Dispose()
+          `;
+        execSync(`powershell -Command "${psScript.replace(/\n/g, " ")}"`, { encoding: "utf8" });
+      } else if (platform === "darwin") {
+        // macOS: Use screencapture
+        const captureCmd = region === "active"
+          ? `screencapture -w "${outputPath}"`
+          : `screencapture -x "${outputPath}"`;
+        execSync(captureCmd, { encoding: "utf8" });
+      } else {
+        // Linux: Try multiple screenshot tools
+        const tools = [
+          { cmd: "gnome-screenshot", args: region === "active" ? `-w -f "${outputPath}"` : `-f "${outputPath}"` },
+          { cmd: "scrot", args: region === "active" ? `-u "${outputPath}"` : `"${outputPath}"` },
+          { cmd: "import", args: region === "active" ? `-window root "${outputPath}"` : `-window root "${outputPath}"` },
+        ];
+
+        let success = false;
+        for (const tool of tools) {
+          try {
+            execSync(`which ${tool.cmd}`, { encoding: "utf8" });
+            execSync(`${tool.cmd} ${tool.args}`, { encoding: "utf8" });
+            success = true;
+            break;
+          } catch {
+            continue;
+          }
+        }
+
+        if (!success) {
+          return {
+            success: false,
+            output: "",
+            error: "No screenshot tool found. Install gnome-screenshot, scrot, or imagemagick.",
+          };
+        }
+      }
+
+      // Verify screenshot was created
+      if (!existsSync(outputPath)) {
+        return { success: false, output: "", error: "Screenshot file was not created" };
+      }
+
+      // Send to chat if requested
+      if (sendToChat && this.currentChatContext?.chatId) {
+        try {
+          const { sendDocument } = await import("../documents/telegram-delivery.js");
+          await sendDocument(this.currentChatContext.chatId, outputPath, {
+            caption: `📸 Desktop screenshot (${region})`,
+          });
+        } catch (sendErr: any) {
+          log.warn("Failed to send screenshot to chat: %s", sendErr.message);
+        }
+      }
+
+      return {
+        success: true,
+        output: `Screenshot captured!\nPath: ${outputPath}\nRegion: ${region}\nMonitor: ${monitor}${sendToChat ? "\nSent to Telegram: Yes" : ""}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Screenshot failed: ${err.message}` };
+    }
+  }
+
+  private async executeScreenRecord(args: Record<string, unknown>): Promise<ToolResult> {
+    const filename = String(args.filename || `recording_${Date.now()}.mp4`);
+    const duration = Number(args.duration || 10);
+    const fps = Number(args.fps || 15);
+    const region = String(args.region || "full");
+
+    try {
+      const { join } = await import("path");
+      const { execSync, spawn } = await import("child_process");
+      const { existsSync, mkdirSync } = await import("fs");
+
+      // Create recordings directory
+      const recordDir = join(process.env.HOME || process.env.USERPROFILE || "", ".wispy", "recordings");
+      if (!existsSync(recordDir)) {
+        mkdirSync(recordDir, { recursive: true });
+      }
+
+      const outputPath = join(recordDir, filename);
+      const platform = process.platform;
+
+      // Check for ffmpeg
+      try {
+        execSync("ffmpeg -version", { encoding: "utf8", stdio: "pipe" });
+      } catch {
+        return {
+          success: false,
+          output: "",
+          error: "FFmpeg not found. Install FFmpeg for screen recording: https://ffmpeg.org/download.html",
+        };
+      }
+
+      let ffmpegArgs: string[];
+
+      if (platform === "win32") {
+        // Windows: Use GDI grab
+        ffmpegArgs = [
+          "-f", "gdigrab",
+          "-framerate", String(fps),
+          "-t", String(duration),
+          "-i", "desktop",
+          "-c:v", "libx264",
+          "-preset", "ultrafast",
+          "-y",
+          outputPath,
+        ];
+      } else if (platform === "darwin") {
+        // macOS: Use avfoundation
+        ffmpegArgs = [
+          "-f", "avfoundation",
+          "-framerate", String(fps),
+          "-t", String(duration),
+          "-i", "1:none",
+          "-c:v", "libx264",
+          "-preset", "ultrafast",
+          "-y",
+          outputPath,
+        ];
+      } else {
+        // Linux: Use x11grab
+        ffmpegArgs = [
+          "-f", "x11grab",
+          "-framerate", String(fps),
+          "-t", String(duration),
+          "-i", ":0.0",
+          "-c:v", "libx264",
+          "-preset", "ultrafast",
+          "-y",
+          outputPath,
+        ];
+      }
+
+      // Run ffmpeg synchronously for short recordings
+      execSync(`ffmpeg ${ffmpegArgs.join(" ")}`, {
+        encoding: "utf8",
+        timeout: (duration + 10) * 1000,
+        stdio: "pipe",
+      });
+
+      if (!existsSync(outputPath)) {
+        return { success: false, output: "", error: "Recording file was not created" };
+      }
+
+      const { statSync } = await import("fs");
+      const stats = statSync(outputPath);
+      const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+
+      return {
+        success: true,
+        output: `Screen recording complete!\nPath: ${outputPath}\nDuration: ${duration}s\nFPS: ${fps}\nSize: ${sizeMB} MB`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Screen recording failed: ${err.message}` };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GIT & GITHUB TOOLS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  private async executeGitInit(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const template = String(args.gitignoreTemplate || "node");
+
+    if (!projectPath) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      if (!existsSync(fullPath)) {
+        return { success: false, output: "", error: `Path not found: ${fullPath}` };
+      }
+
+      // Initialize git
+      const initResult = execSync("git init", { cwd: fullPath, encoding: "utf8" });
+
+      // Create .gitignore based on template
+      const gitignoreTemplates: Record<string, string> = {
+        node: `node_modules/\n.env\n.env.local\ndist/\n.next/\n.cache/\n*.log\n.DS_Store\nThumbdumbs.db`,
+        python: `__pycache__/\n*.pyc\n.env\nvenv/\n.venv/\ndist/\n*.egg-info/`,
+        react: `node_modules/\nbuild/\n.env\n.env.local\n*.log\n.DS_Store`,
+        nextjs: `node_modules/\n.next/\nout/\n.env\n.env.local\n*.log\n.DS_Store\n.vercel`,
+      };
+
+      const gitignoreContent = gitignoreTemplates[template] || gitignoreTemplates.node;
+      const gitignorePath = join(fullPath, ".gitignore");
+      writeFileSync(gitignorePath, gitignoreContent, "utf-8");
+
+      return {
+        success: true,
+        output: `Git repository initialized!\n\n${initResult}\n\n.gitignore created with ${template} template.`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Git init failed: ${err.message}` };
+    }
+  }
+
+  private async executeGitCommit(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const message = String(args.message || "");
+    const stageAll = args.all !== false;
+
+    if (!projectPath || !message) {
+      return { success: false, output: "", error: "path and message are required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      // Stage all changes if requested
+      if (stageAll) {
+        execSync("git add -A", { cwd: fullPath, encoding: "utf8" });
+      }
+
+      // Check if there are staged changes
+      const status = execSync("git status --porcelain", { cwd: fullPath, encoding: "utf8" });
+      if (!status.trim()) {
+        return { success: true, output: "Nothing to commit - working tree clean." };
+      }
+
+      // Commit with message
+      const commitResult = execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+        cwd: fullPath,
+        encoding: "utf8",
+      });
+
+      return {
+        success: true,
+        output: `Commit created!\n\n${commitResult}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Git commit failed: ${err.message}` };
+    }
+  }
+
+  private async executeGitPush(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const remote = String(args.remote || "origin");
+    const branch = String(args.branch || "main");
+    const createRepo = Boolean(args.createRepo);
+    const repoName = String(args.repoName || "");
+    const isPrivate = Boolean(args.private);
+
+    if (!projectPath) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const { join, isAbsolute, basename } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      // Create GitHub repo if requested
+      if (createRepo) {
+        const name = repoName || basename(fullPath);
+        const visibility = isPrivate ? "--private" : "--public";
+
+        try {
+          // Check if gh CLI is available
+          execSync("gh --version", { encoding: "utf8", stdio: "pipe" });
+
+          // Create repo
+          execSync(`gh repo create ${name} ${visibility} --source="${fullPath}" --remote=origin`, {
+            cwd: fullPath,
+            encoding: "utf8",
+          });
+        } catch (ghErr: any) {
+          // gh CLI not available or repo creation failed
+          if (ghErr.message?.includes("gh")) {
+            return { success: false, output: "", error: "GitHub CLI (gh) not installed. Install it with: npm install -g gh" };
+          }
+          // Repo might already exist, continue
+        }
+      }
+
+      // Check if remote exists
+      try {
+        execSync(`git remote get-url ${remote}`, { cwd: fullPath, encoding: "utf8", stdio: "pipe" });
+      } catch {
+        return { success: false, output: "", error: `Remote '${remote}' not found. Use createRepo: true or add remote manually.` };
+      }
+
+      // Push
+      const pushResult = execSync(`git push -u ${remote} ${branch}`, {
+        cwd: fullPath,
+        encoding: "utf8",
+      });
+
+      // Get remote URL
+      const remoteUrl = execSync(`git remote get-url ${remote}`, { cwd: fullPath, encoding: "utf8" }).trim();
+
+      return {
+        success: true,
+        output: `Pushed to GitHub!\n\nRemote: ${remoteUrl}\nBranch: ${branch}\n\n${pushResult}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Git push failed: ${err.message}` };
+    }
+  }
+
+  private async executeGitStatus(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+
+    if (!projectPath) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      const status = execSync("git status", { cwd: fullPath, encoding: "utf8" });
+      const branch = execSync("git branch --show-current", { cwd: fullPath, encoding: "utf8" }).trim();
+
+      let remoteInfo = "";
+      try {
+        remoteInfo = execSync("git remote -v", { cwd: fullPath, encoding: "utf8" });
+      } catch { /* no remote */ }
+
+      return {
+        success: true,
+        output: `Git Status\n\nBranch: ${branch}\n\n${status}\n${remoteInfo ? `\nRemotes:\n${remoteInfo}` : ""}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Git status failed: ${err.message}` };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // VERCEL DEPLOYMENT
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  private async executeVercelDeploy(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const production = Boolean(args.production);
+    const name = String(args.name || "");
+    const envStr = String(args.env || "{}");
+
+    if (!projectPath) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      // Check if Vercel CLI is available
+      try {
+        execSync("vercel --version", { encoding: "utf8", stdio: "pipe" });
+      } catch {
+        return { success: false, output: "", error: "Vercel CLI not installed. Install it with: npm install -g vercel" };
+      }
+
+      // Build command
+      let cmd = "vercel";
+      if (production) cmd += " --prod";
+      if (name) cmd += ` --name=${name}`;
+      cmd += " --yes"; // Skip prompts
+
+      // Parse and add environment variables
+      try {
+        const env = JSON.parse(envStr);
+        for (const [key, value] of Object.entries(env)) {
+          cmd += ` -e ${key}=${value}`;
+        }
+      } catch { /* invalid JSON, skip */ }
+
+      // Deploy
+      const result = execSync(cmd, {
+        cwd: fullPath,
+        encoding: "utf8",
+        timeout: 300000, // 5 minute timeout
+      });
+
+      // Extract URL from result
+      const urlMatch = result.match(/https:\/\/[^\s]+\.vercel\.app/);
+      const deployUrl = urlMatch ? urlMatch[0] : "Unknown";
+
+      return {
+        success: true,
+        output: `Deployed to Vercel!\n\n🚀 URL: ${deployUrl}\n\n${result}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Vercel deploy failed: ${err.message}` };
+    }
+  }
+
+  private async executeVercelList(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const limit = Number(args.limit) || 5;
+
+    try {
+      // Check if Vercel CLI is available
+      try {
+        execSync("vercel --version", { encoding: "utf8", stdio: "pipe" });
+      } catch {
+        return { success: false, output: "", error: "Vercel CLI not installed. Install it with: npm install -g vercel" };
+      }
+
+      const cmd = projectPath
+        ? `vercel list --limit=${limit}`
+        : `vercel list --limit=${limit}`;
+
+      const { join, isAbsolute } = await import("path");
+      const cwd = projectPath
+        ? (isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath))
+        : process.cwd();
+
+      const result = execSync(cmd, { cwd, encoding: "utf8" });
+
+      return {
+        success: true,
+        output: `Recent Vercel Deployments:\n\n${result}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Vercel list failed: ${err.message}` };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // NPM/PACKAGE MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  private async executeNpmInstall(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const packages = String(args.packages || "");
+    const dev = Boolean(args.dev);
+
+    if (!projectPath) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      let cmd = "npm install";
+      if (packages) {
+        cmd += ` ${packages}`;
+        if (dev) cmd += " --save-dev";
+      }
+
+      const result = execSync(cmd, {
+        cwd: fullPath,
+        encoding: "utf8",
+        timeout: 300000, // 5 minute timeout
+        maxBuffer: 10 * 1024 * 1024,
+      });
+
+      return {
+        success: true,
+        output: `npm install complete!\n\n${result}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `npm install failed: ${err.message}` };
+    }
+  }
+
+  private async executeNpmRun(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = String(args.path || "");
+    const script = String(args.script || "");
+    const scriptArgs = String(args.args || "");
+
+    if (!projectPath || !script) {
+      return { success: false, output: "", error: "path and script are required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(projectPath) ? projectPath : join(this.runtimeDir, "workspace", projectPath);
+
+      // Check if package.json exists
+      const packageJsonPath = join(fullPath, "package.json");
+      if (!existsSync(packageJsonPath)) {
+        return { success: false, output: "", error: "No package.json found in project" };
+      }
+
+      // Check if script exists
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+      if (!packageJson.scripts?.[script]) {
+        const available = Object.keys(packageJson.scripts || {}).join(", ");
+        return { success: false, output: "", error: `Script '${script}' not found. Available: ${available}` };
+      }
+
+      let cmd = `npm run ${script}`;
+      if (scriptArgs) cmd += ` -- ${scriptArgs}`;
+
+      const result = execSync(cmd, {
+        cwd: fullPath,
+        encoding: "utf8",
+        timeout: 300000, // 5 minute timeout
+        maxBuffer: 10 * 1024 * 1024,
+      });
+
+      return {
+        success: true,
+        output: `npm run ${script} complete!\n\n${result}`,
+      };
+    } catch (err: any) {
+      // Many scripts (like test) exit with non-zero on failure but still have useful output
+      const output = err.stdout || err.stderr || err.message;
+      return { success: false, output: output, error: `npm run ${script} failed` };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // DEBUGGING TOOLS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  private async executeDebugLogs(args: Record<string, unknown>): Promise<ToolResult> {
+    const logPath = String(args.path || "");
+    const type = String(args.type || "auto");
+    const lines = Number(args.lines) || 100;
+    const filter = String(args.filter || "");
+
+    if (!logPath) {
+      return { success: false, output: "", error: "path is required" };
+    }
+
+    try {
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(logPath) ? logPath : join(this.runtimeDir, "workspace", logPath);
+
+      let logContent = "";
+
+      // Check if it's a file or directory
+      const { statSync } = await import("fs");
+      const stats = statSync(fullPath);
+
+      if (stats.isDirectory()) {
+        // Look for common log files
+        const logFiles = [
+          "npm-debug.log",
+          ".npm/_logs/*.log",
+          "yarn-error.log",
+          "debug.log",
+          "error.log",
+          ".next/trace",
+        ];
+
+        for (const pattern of logFiles) {
+          const filePath = join(fullPath, pattern);
+          if (existsSync(filePath)) {
+            logContent += `\n=== ${pattern} ===\n`;
+            logContent += readFileSync(filePath, "utf-8").split("\n").slice(-lines).join("\n");
+          }
+        }
+
+        if (!logContent) {
+          return { success: true, output: "No log files found in directory." };
+        }
+      } else {
+        // Read the specific log file
+        logContent = readFileSync(fullPath, "utf-8");
+      }
+
+      // Get last N lines
+      let logLines = logContent.split("\n").slice(-lines);
+
+      // Apply filter if provided
+      if (filter) {
+        const regex = new RegExp(filter, "i");
+        logLines = logLines.filter(line => regex.test(line));
+      }
+
+      // Highlight errors and warnings
+      const output = logLines.map(line => {
+        if (/error/i.test(line)) return `❌ ${line}`;
+        if (/warn/i.test(line)) return `⚠️ ${line}`;
+        return line;
+      }).join("\n");
+
+      return {
+        success: true,
+        output: `Log Analysis:\n\n${output || "No matching log entries found."}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Log analysis failed: ${err.message}` };
+    }
+  }
+
+  private async executeDebugPort(args: Record<string, unknown>): Promise<ToolResult> {
+    const port = Number(args.port);
+    const kill = Boolean(args.kill);
+
+    if (!port) {
+      return { success: false, output: "", error: "port is required" };
+    }
+
+    try {
+      const platform = process.platform;
+      let cmd = "";
+      let result = "";
+
+      if (platform === "win32") {
+        cmd = `netstat -ano | findstr :${port}`;
+      } else {
+        cmd = `lsof -i :${port}`;
+      }
+
+      try {
+        result = execSync(cmd, { encoding: "utf8", stdio: "pipe" });
+      } catch {
+        return { success: true, output: `Port ${port} is available - nothing is using it.` };
+      }
+
+      if (!result.trim()) {
+        return { success: true, output: `Port ${port} is available - nothing is using it.` };
+      }
+
+      // Extract PID
+      let pid = "";
+      if (platform === "win32") {
+        const match = result.match(/\s+(\d+)\s*$/m);
+        pid = match ? match[1] : "";
+      } else {
+        const match = result.match(/\s+(\d+)\s+/);
+        pid = match ? match[1] : "";
+      }
+
+      if (kill && pid) {
+        if (platform === "win32") {
+          execSync(`taskkill /PID ${pid} /F`, { encoding: "utf8" });
+        } else {
+          execSync(`kill -9 ${pid}`, { encoding: "utf8" });
+        }
+        return {
+          success: true,
+          output: `Port ${port} was in use by PID ${pid}.\n\n✅ Process killed. Port is now free.`,
+        };
+      }
+
+      return {
+        success: true,
+        output: `Port ${port} is in use:\n\n${result}\n\n${pid ? `PID: ${pid}\n\nUse kill: true to free this port.` : ""}`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Port check failed: ${err.message}` };
+    }
+  }
+
+  private async executeDebugProcess(args: Record<string, unknown>): Promise<ToolResult> {
+    const filter = String(args.filter || "node");
+    const kill = Boolean(args.kill);
+
+    try {
+      const platform = process.platform;
+      let cmd = "";
+      let result = "";
+
+      if (platform === "win32") {
+        cmd = `tasklist /FI "IMAGENAME eq ${filter}*" /FO TABLE`;
+      } else {
+        cmd = `ps aux | grep -i "${filter}" | grep -v grep`;
+      }
+
+      try {
+        result = execSync(cmd, { encoding: "utf8", stdio: "pipe" });
+      } catch {
+        return { success: true, output: `No processes matching '${filter}' found.` };
+      }
+
+      if (!result.trim()) {
+        return { success: true, output: `No processes matching '${filter}' found.` };
+      }
+
+      if (kill) {
+        if (platform === "win32") {
+          execSync(`taskkill /IM "${filter}*" /F`, { encoding: "utf8" });
+        } else {
+          execSync(`pkill -f "${filter}"`, { encoding: "utf8" });
+        }
+        return {
+          success: true,
+          output: `Killed processes matching '${filter}'.\n\nPreviously running:\n${result}`,
+        };
+      }
+
+      return {
+        success: true,
+        output: `Processes matching '${filter}':\n\n${result}\n\nUse kill: true to terminate these processes.`,
+      };
+    } catch (err: any) {
+      return { success: false, output: "", error: `Process check failed: ${err.message}` };
+    }
+  }
+
 }

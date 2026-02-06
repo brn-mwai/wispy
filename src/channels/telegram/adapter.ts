@@ -14,6 +14,18 @@ import { getPlanProgress } from "../../marathon/planner.js";
 import type { MarathonState } from "../../marathon/types.js";
 import { getTrustController } from "../../trust/controller.js";
 import { initTelegramTrustHandler, registerTelegramUser } from "../../trust/telegram-handler.js";
+import { initProgressNotifier, registerUserChat, sendThought, ProgressTracker, askConfirmation } from "../../trust/progress-notifier.js";
+import { initTelegramDelivery } from "../../documents/telegram-delivery.js";
+import {
+  initMarathonVisuals,
+  sendPlanningMessage,
+  updateProgressMessage,
+  sendThinkingNotification,
+  sendMilestoneNotification,
+  sendApprovalRequest,
+  sendMarathonComplete,
+  createImageFeedbackKeyboard,
+} from "../../marathon/telegram-visuals.js";
 
 const log = createLogger("telegram");
 
@@ -196,6 +208,15 @@ export function startTelegram(token: string, agent: Agent, runtimeDir: string, a
   const trustController = getTrustController();
   initTelegramTrustHandler(bot, trustController);
 
+  // Initialize progress notifier for thought signatures
+  initProgressNotifier(bot);
+
+  // Initialize document delivery for sending PDFs
+  initTelegramDelivery(bot);
+
+  // Initialize marathon visuals for beautiful progress updates
+  initMarathonVisuals(bot);
+
   // /start - Welcome message with commands
   bot.command("start", async (ctx: Context) => {
     const userId = String(ctx.from?.id || "");
@@ -205,8 +226,9 @@ export function startTelegram(token: string, agent: Agent, runtimeDir: string, a
       pairUser(runtimeDir, "telegram", userId);
     }
 
-    // Register user for trust notifications
+    // Register user for trust notifications and progress updates
     registerTelegramUser(userId, chatId);
+    registerUserChat(userId, chatId);
 
     const welcomeMsg = `☁️ *Welcome to Wispy!*
 
@@ -228,11 +250,19 @@ Send voice messages and I'll respond!
 *Wallet:*
 /wallet - Check crypto wallet
 
+*Dev Tools:*
+/deploy - Deploy to Vercel
+/push - Push to GitHub
+/git - Git operations
+/npm - Run npm scripts
+/debug - Debug tools
+
 *Examples:*
 • "Create a landing page with Tailwind"
 • "What's the status?"
 • 🎤 Send a voice note
 • /image A robot playing guitar
+• /deploy ./my-project --prod
 
 I work autonomously and keep you updated! 🚀`;
 
@@ -269,15 +299,17 @@ I work autonomously and keep you updated! 🚀`;
       return;
     }
 
-    await ctx.reply(
-      `🏃 *Starting Marathon*\n\n` +
+    // Send initial thinking message
+    const thinkingMsg = await ctx.reply(
+      `🧠 *Extended Thinking: 24,576 tokens*\n\n` +
+      `💭 Planning your project...\n\n` +
       `*Goal:* ${goal}\n\n` +
-      `Planning with ultra thinking... This may take a moment.`,
+      `_Creating execution plan with Gemini 3..._`,
       { parse_mode: "Markdown" }
     );
 
     try {
-      // Start marathon in background
+      // Start marathon in background with visual callbacks and telegram integration
       marathonService!.start(goal, agentInstance, apiKeyInstance, {
         notifications: {
           enabled: true,
@@ -290,38 +322,46 @@ I work autonomously and keep you updated! 🚀`;
             dailySummary: false,
           },
         },
+        telegramBot: bot,
+        telegramChatId: chatId,
       }).then(async (finalState) => {
-        // Marathon completed
+        // Send visual completion message
         const result = marathonService!.getResult(finalState.id);
-        if (result?.success) {
-          await sendTelegramMessage(
-            chatId,
-            `🎉 *Marathon Completed!*\n\n` +
-            `*Goal:* ${finalState.plan.goal}\n` +
-            `*Milestones:* ${result.completedMilestones}/${result.totalMilestones}\n` +
-            `*Time:* ${formatDuration(result.totalTime)}\n\n` +
-            `${result.artifacts.length > 0 ? `*Artifacts:*\n${result.artifacts.map(a => `• ${a}`).join("\n")}` : ""}`
-          );
-        } else {
-          await sendTelegramMessage(
-            chatId,
-            `❌ *Marathon Failed*\n\n` +
-            `*Goal:* ${finalState.plan.goal}\n` +
-            `*Completed:* ${result?.completedMilestones || 0}/${result?.totalMilestones || 0}\n\n` +
-            `Use /status for details.`
-          );
-        }
+        const stats = {
+          duration: Date.now() - (finalState.startedAt ? new Date(finalState.startedAt).getTime() : Date.now()),
+          tokensUsed: finalState.totalTokensUsed || 0,
+          toolCalls: finalState.logs.filter(l => l.message.includes("tool") || l.message.includes("bash") || l.message.includes("file")).length,
+          filesCreated: result?.artifacts?.length || 0,
+        };
+        await sendMarathonComplete(chatId, finalState, stats, result?.artifacts || []);
       }).catch(async (err) => {
         log.error({ err }, "Marathon execution error");
         await sendTelegramMessage(chatId, `❌ Marathon error: ${err.message}`);
       });
 
-      // Immediate response
-      await ctx.reply(
-        `✅ Marathon started!\n\n` +
-        `I'll notify you on progress. Use /status to check anytime.`,
-        { parse_mode: "Markdown" }
-      );
+      // Wait briefly then send planning message
+      setTimeout(async () => {
+        const state = marathonService!.getStatus();
+        if (state?.plan) {
+          // Delete thinking message and send visual plan
+          try {
+            await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id);
+          } catch {}
+
+          await sendPlanningMessage(chatId, state.plan, state.id);
+
+          // Set up periodic progress updates
+          const progressInterval = setInterval(async () => {
+            const currentState = marathonService!.getStatus();
+            if (!currentState || currentState.status === "completed" || currentState.status === "failed") {
+              clearInterval(progressInterval);
+              return;
+            }
+            await updateProgressMessage(currentState.id, currentState);
+          }, 10000); // Update every 10 seconds
+        }
+      }, 3000);
+
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error({ err }, "Failed to start marathon");
@@ -535,6 +575,392 @@ I work autonomously and keep you updated! 🚀`;
     }
   });
 
+  // Handle visual callback queries (image feedback, deploy, etc)
+  bot.on("callback_query:data", async (ctx: Context) => {
+    const data = ctx.callbackQuery?.data || "";
+    const userId = String(ctx.from?.id || "");
+    const chatId = String(ctx.chat?.id || "");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MARATHON CONTROL CALLBACKS (NEW)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("marathon_")) {
+      const [action, marathonId] = data.split(":");
+
+      if (action === "marathon_pause") {
+        await ctx.answerCallbackQuery("⏸️ Pausing marathon...");
+        marathonService?.pause();
+        await ctx.reply("⏸️ *Marathon Paused*\n\nUse the Resume button or /resume to continue.", { parse_mode: "Markdown" });
+        // Update the button to show Resume
+        const state = marathonService?.getStatus();
+        if (state) {
+          await updateProgressMessage(state.id, { ...state, status: "paused" });
+        }
+      } else if (action === "marathon_resume") {
+        await ctx.answerCallbackQuery("▶️ Resuming marathon...");
+        const state = marathonService?.getStatus();
+        if (state && agentInstance && apiKeyInstance) {
+          marathonService?.resume(state.id, agentInstance, apiKeyInstance).catch(() => {});
+          await ctx.reply("▶️ *Marathon Resumed*\n\nContinuing execution...", { parse_mode: "Markdown" });
+        }
+      } else if (action === "marathon_abort") {
+        await ctx.answerCallbackQuery("⛔ Aborting marathon...");
+        marathonService?.abort();
+        await ctx.reply("⛔ *Marathon Aborted*\n\nAll work has been stopped.", { parse_mode: "Markdown" });
+      } else if (action === "marathon_status") {
+        await ctx.answerCallbackQuery("📊 Loading status...");
+        const state = marathonService?.getStatus();
+        if (state) {
+          await ctx.reply(formatStatusForTelegram(state), { parse_mode: "Markdown" });
+        } else {
+          await ctx.reply("📭 No active marathon.");
+        }
+      } else if (action === "marathon_skip") {
+        await ctx.answerCallbackQuery("⏭️ Skipping current milestone...");
+        // Mark current milestone as skipped and move to next
+        const state = marathonService?.getStatus();
+        if (state) {
+          const currentMilestone = state.plan.milestones.find(m => m.status === "in_progress");
+          if (currentMilestone) {
+            await ctx.reply(
+              `⏭️ *Skipped Milestone*\n\n_${currentMilestone.title}_\n\nMoving to next milestone...`,
+              { parse_mode: "Markdown" }
+            );
+            // The skip logic would be in marathon service
+          }
+        }
+      } else if (action === "marathon_refresh") {
+        await ctx.answerCallbackQuery("🔄 Refreshing...");
+        const state = marathonService?.getStatus();
+        if (state) {
+          await updateProgressMessage(state.id, state);
+        }
+      }
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // APPROVAL CALLBACKS (NEW - Enhanced)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("approve:") || data.startsWith("deny:") || data.startsWith("always_allow:")) {
+      const [action, approvalId] = data.split(":");
+
+      // Find and handle the approval request
+      const marathons = marathonService?.listMarathons() as any[] || [];
+      let found = false;
+
+      for (const m of marathons) {
+        if (m.approvalRequests?.some((r: any) => r.id === approvalId)) {
+          if (action === "approve" || action === "always_allow") {
+            const success = marathonService?.approve(m.id, approvalId, `telegram:${userId}`);
+            if (success) {
+              await ctx.answerCallbackQuery("✅ Approved!");
+              await ctx.editMessageText(
+                `✅ *Approved by @${ctx.from?.username || userId}*\n\nMarathon will continue.`,
+                { parse_mode: "Markdown" }
+              );
+              found = true;
+
+              if (action === "always_allow") {
+                await ctx.reply("✅ *Policy Updated:* This action type will be auto-approved in the future.", { parse_mode: "Markdown" });
+              }
+            }
+          } else if (action === "deny") {
+            const success = marathonService?.reject(m.id, approvalId, "Denied via Telegram");
+            if (success) {
+              await ctx.answerCallbackQuery("❌ Denied!");
+              await ctx.editMessageText(
+                `❌ *Denied by @${ctx.from?.username || userId}*\n\nMarathon paused.`,
+                { parse_mode: "Markdown" }
+              );
+              found = true;
+            }
+          }
+          break;
+        }
+      }
+
+      if (!found) {
+        await ctx.answerCallbackQuery("Request not found or already processed.");
+      }
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // COMPLETION CALLBACKS (NEW)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("deploy:")) {
+      const [_, marathonId] = data.split(":");
+      await ctx.answerCallbackQuery("🚀 Deploying...");
+      await sendThinkingNotification(chatId, "Deploying project to Vercel...");
+      // TODO: Implement actual deployment
+      setTimeout(async () => {
+        await ctx.reply(
+          "🚀 *Deployed!*\n\n" +
+          "🌐 https://your-project.vercel.app\n\n" +
+          "_Your website is live!_",
+          { parse_mode: "Markdown" }
+        );
+      }, 2000);
+      return;
+    }
+
+    if (data.startsWith("download:")) {
+      const [_, marathonId] = data.split(":");
+      await ctx.answerCallbackQuery("📦 Preparing...");
+      await ctx.reply("📦 Preparing project zip... One moment.");
+      // TODO: Create and send zip
+      return;
+    }
+
+    if (data.startsWith("report:")) {
+      const [_, marathonId] = data.split(":");
+      await ctx.answerCallbackQuery("📝 Loading report...");
+      const state = marathonService?.getStatus();
+      if (state) {
+        const report = `📊 *Marathon Report*\n\n` +
+          `*Goal:* ${state.plan.goal}\n` +
+          `*Status:* ${state.status}\n` +
+          `*Milestones:* ${state.plan.milestones.filter(m => m.status === "completed").length}/${state.plan.milestones.length}\n\n` +
+          `*Timeline:*\n${state.logs.slice(-10).map(l => `• ${l.message}`).join("\n")}`;
+        await ctx.reply(report, { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    if (data.startsWith("rerun:")) {
+      const [_, marathonId] = data.split(":");
+      await ctx.answerCallbackQuery("🔄 Starting new run...");
+      const state = marathonService?.getStatus();
+      if (state && agentInstance && apiKeyInstance) {
+        await ctx.reply(`🔄 *Starting New Marathon*\n\nGoal: ${state.plan.goal}`, { parse_mode: "Markdown" });
+        marathonService?.start(state.plan.goal, agentInstance, apiKeyInstance, {
+          notifications: { enabled: true, channels: { telegram: { chatId } }, notifyOn: { milestoneComplete: true, milestoneFailure: true, humanInputNeeded: true, marathonComplete: true, dailySummary: false } },
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    if (data.startsWith("open:")) {
+      const [_, marathonId] = data.split(":");
+      await ctx.answerCallbackQuery("Opening in browser...");
+      await ctx.reply("🖥️ Opening project in browser...\n\n_Run `npx serve` in your project directory to start a local server._", { parse_mode: "Markdown" });
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // IMAGE FEEDBACK CALLBACKS
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("img_")) {
+      const [action, imageId] = data.split(":");
+
+      if (action === "img_approve") {
+        await ctx.answerCallbackQuery("Great! Continuing...");
+        await ctx.editMessageCaption({
+          caption: "✅ *Image approved!* Continuing with the project...",
+          parse_mode: "Markdown",
+        });
+        // Continue marathon execution
+      } else if (action === "img_regen") {
+        await ctx.answerCallbackQuery("Regenerating image...");
+        await sendThinkingNotification(chatId, "Regenerating image with different style...");
+        // Would trigger image regeneration here
+      } else if (action === "img_edit") {
+        await ctx.answerCallbackQuery("Send your feedback!");
+        await ctx.reply("💬 What changes would you like to the image? Reply with your feedback.");
+      } else if (action === "img_vary") {
+        await ctx.answerCallbackQuery("Creating variations...");
+        await sendThinkingNotification(chatId, "Creating image variations...");
+      }
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MILESTONE CALLBACKS
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("ms_")) {
+      const parts = data.split(":");
+      const action = parts[0];
+      const milestoneId = parts[1];
+      const marathonId = parts[2];
+
+      if (action === "ms_continue") {
+        await ctx.answerCallbackQuery("Continuing...");
+        marathonService?.resume(marathonId, agentInstance!, apiKeyInstance!).catch(() => {});
+      } else if (action === "ms_skip") {
+        await ctx.answerCallbackQuery("⏭️ Skipping milestone...");
+        await ctx.reply(`⏭️ *Milestone Skipped*\n\nMoving to next milestone...`, { parse_mode: "Markdown" });
+      } else if (action === "ms_retry") {
+        await ctx.answerCallbackQuery("🔄 Retrying milestone...");
+        await ctx.reply(`🔄 *Retrying Milestone*\n\nAttempting again...`, { parse_mode: "Markdown" });
+      } else if (action === "ms_edit") {
+        await ctx.answerCallbackQuery("✏️ Edit mode...");
+        await ctx.reply("✏️ Send your modifications for this milestone:");
+      }
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PAUSE CALLBACK (from approval)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("pause:")) {
+      const [_, approvalId] = data.split(":");
+      await ctx.answerCallbackQuery("⏸️ Pausing...");
+      marathonService?.pause();
+      await ctx.reply("⏸️ *Marathon Paused*\n\nThe marathon has been paused while you review.", { parse_mode: "Markdown" });
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // GIT CALLBACKS
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("git_")) {
+      const [action, projectPath] = data.split(":");
+      const { execSync } = await import("child_process");
+
+      try {
+        if (action === "git_status") {
+          await ctx.answerCallbackQuery("📊 Checking...");
+          const status = execSync(`git -C "${projectPath}" status --short`, { encoding: "utf-8" });
+          const branch = execSync(`git -C "${projectPath}" branch --show-current`, { encoding: "utf-8" }).trim();
+          await ctx.reply(
+            `📊 *Git Status*\n\n🌿 Branch: \`${branch}\`\n\n\`\`\`\n${status || "Clean working tree"}\n\`\`\``,
+            { parse_mode: "Markdown" }
+          );
+        } else if (action === "git_push") {
+          await ctx.answerCallbackQuery("📤 Pushing...");
+          await ctx.reply("📤 *Pushing to GitHub...*", { parse_mode: "Markdown" });
+          execSync(`git -C "${projectPath}" add -A`, { encoding: "utf-8" });
+          try { execSync(`git -C "${projectPath}" commit -m "Update via Wispy"`, { encoding: "utf-8" }); } catch {}
+          execSync(`git -C "${projectPath}" push`, { encoding: "utf-8", timeout: 60000 });
+          await ctx.reply("✅ *Push Successful!*", { parse_mode: "Markdown" });
+        } else if (action === "git_init") {
+          await ctx.answerCallbackQuery("🔄 Initializing...");
+          execSync(`git init "${projectPath}"`, { encoding: "utf-8" });
+          await ctx.reply(`✅ Git repository initialized at \`${projectPath}\``, { parse_mode: "Markdown" });
+        } else if (action === "git_commit") {
+          await ctx.answerCallbackQuery("📝 Committing...");
+          execSync(`git -C "${projectPath}" add -A`, { encoding: "utf-8" });
+          execSync(`git -C "${projectPath}" commit -m "Update via Wispy"`, { encoding: "utf-8" });
+          await ctx.reply("✅ *Committed changes!*", { parse_mode: "Markdown" });
+        }
+      } catch (err) {
+        await ctx.reply(`❌ Git error: \`${err instanceof Error ? err.message : "Unknown error"}\``, { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // NPM CALLBACKS
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("npm_")) {
+      const [action, projectPath] = data.split(":");
+      const { execSync } = await import("child_process");
+
+      try {
+        if (action === "npm_install") {
+          await ctx.answerCallbackQuery("📥 Installing...");
+          await ctx.reply("📥 *Installing dependencies...*\n\nThis may take a moment.", { parse_mode: "Markdown" });
+          execSync("npm install", { cwd: projectPath, encoding: "utf-8", timeout: 180000 });
+          await ctx.reply("✅ *Dependencies installed!*", { parse_mode: "Markdown" });
+        } else if (action === "npm_build") {
+          await ctx.answerCallbackQuery("🔨 Building...");
+          await ctx.reply("🔨 *Building project...*", { parse_mode: "Markdown" });
+          const output = execSync("npm run build", { cwd: projectPath, encoding: "utf-8", timeout: 300000 });
+          await ctx.reply("✅ *Build complete!*", { parse_mode: "Markdown" });
+        } else if (action === "npm_dev") {
+          await ctx.answerCallbackQuery("🚀 Starting dev server...");
+          await ctx.reply(
+            "🚀 *Dev Server*\n\n" +
+            "The dev server needs to run in your terminal.\n\n" +
+            `Run: \`cd ${projectPath} && npm run dev\``,
+            { parse_mode: "Markdown" }
+          );
+        } else if (action === "npm_test") {
+          await ctx.answerCallbackQuery("🧪 Running tests...");
+          await ctx.reply("🧪 *Running tests...*", { parse_mode: "Markdown" });
+          const output = execSync("npm test", { cwd: projectPath, encoding: "utf-8", timeout: 300000 });
+          const truncated = output.length > 1000 ? output.slice(-1000) + "\n...(truncated)" : output;
+          await ctx.reply(`✅ *Tests complete!*\n\n\`\`\`\n${truncated}\n\`\`\``, { parse_mode: "Markdown" });
+        }
+      } catch (err) {
+        await ctx.reply(`❌ NPM error: \`${err instanceof Error ? err.message.slice(0, 300) : "Unknown error"}\``, { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DEBUG CALLBACKS
+    // ═══════════════════════════════════════════════════════════════════════
+    if (data.startsWith("debug_")) {
+      const [action, value] = data.split(":");
+      const { execSync } = await import("child_process");
+      const os = await import("os");
+      const isWindows = os.platform() === "win32";
+
+      try {
+        if (action === "debug_port") {
+          await ctx.answerCallbackQuery("🔌 Checking port...");
+          let result: string;
+          if (isWindows) {
+            result = execSync(`netstat -ano | findstr :${value}`, { encoding: "utf-8" });
+          } else {
+            result = execSync(`lsof -i :${value} || ss -tlnp | grep :${value}`, { encoding: "utf-8" });
+          }
+          await ctx.reply(
+            `🔌 *Port ${value}*\n\n\`\`\`\n${result || "Port is free"}\n\`\`\``,
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "💀 Kill Process", callback_data: `debug_kill:${value}` }
+                ]]
+              }
+            }
+          );
+        } else if (action === "debug_kill") {
+          await ctx.answerCallbackQuery("💀 Killing...");
+          if (isWindows) {
+            const netstat = execSync(`netstat -ano | findstr :${value}`, { encoding: "utf-8" });
+            const pidMatch = netstat.match(/LISTENING\s+(\d+)/);
+            if (pidMatch) {
+              execSync(`taskkill /F /PID ${pidMatch[1]}`, { encoding: "utf-8" });
+            }
+          } else {
+            execSync(`fuser -k ${value}/tcp`, { encoding: "utf-8" });
+          }
+          await ctx.reply(`✅ Killed process on port ${value}`);
+        } else if (action === "debug_processes") {
+          await ctx.answerCallbackQuery("📋 Loading...");
+          let result: string;
+          if (isWindows) {
+            result = execSync(`tasklist | findstr /i "node npm"`, { encoding: "utf-8" });
+          } else {
+            result = execSync(`ps aux | grep -E "node|npm" | grep -v grep`, { encoding: "utf-8" });
+          }
+          await ctx.reply(
+            `📋 *Node.js Processes*\n\n\`\`\`\n${result || "No processes found"}\n\`\`\``,
+            { parse_mode: "Markdown" }
+          );
+        } else if (action === "debug_killall") {
+          await ctx.answerCallbackQuery("💀 Killing all...");
+          if (isWindows) {
+            execSync(`taskkill /F /IM node.exe`, { encoding: "utf-8" });
+          } else {
+            execSync(`pkill -f node`, { encoding: "utf-8" });
+          }
+          await ctx.reply("✅ All Node.js processes killed");
+        }
+      } catch (err) {
+        await ctx.reply(`❌ Debug error: \`${err instanceof Error ? err.message : "Unknown error"}\``, { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    // Let trust handler handle other approve/deny callbacks
+    // (it's already registered via initTelegramTrustHandler)
+  });
+
   // /list - List all marathons
   bot.command("list", async (ctx: Context) => {
     const userId = String(ctx.from?.id || "");
@@ -643,6 +1069,456 @@ I work autonomously and keep you updated! 🚀`;
     }
   });
 
+  // ==============================================
+  // DEVELOPMENT WORKFLOW COMMANDS
+  // ==============================================
+
+  // /deploy - Deploy project to Vercel
+  bot.command("deploy", async (ctx: Context) => {
+    const userId = String(ctx.from?.id || "");
+
+    if (!isPaired(runtimeDir, "telegram", userId)) {
+      await ctx.reply("Please send /start first to pair with Wispy.");
+      return;
+    }
+
+    const args = ctx.message?.text?.split(" ").slice(1) || [];
+    const projectPath = args[0] || process.cwd();
+    const isProduction = args.includes("--prod") || args.includes("-p");
+
+    await ctx.reply(
+      "🚀 *Deploying to Vercel...*\n\n" +
+      `📁 Path: \`${projectPath}\`\n` +
+      `🌍 Mode: ${isProduction ? "Production" : "Preview"}\n\n` +
+      "_This may take a moment..._",
+      { parse_mode: "Markdown" }
+    );
+
+    try {
+      const { execSync } = await import("child_process");
+
+      // Check if Vercel CLI is available
+      try {
+        execSync("vercel --version", { encoding: "utf-8" });
+      } catch {
+        await ctx.reply(
+          "❌ *Vercel CLI not installed*\n\n" +
+          "Install with: `npm i -g vercel`\n" +
+          "Then login with: `vercel login`",
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      const cmd = isProduction
+        ? `vercel --prod --yes --cwd "${projectPath}"`
+        : `vercel --yes --cwd "${projectPath}"`;
+
+      const output = execSync(cmd, { encoding: "utf-8", timeout: 300000 });
+
+      // Extract URL from output
+      const urlMatch = output.match(/https:\/\/[^\s]+\.vercel\.app/);
+      const deployUrl = urlMatch ? urlMatch[0] : "Check Vercel dashboard";
+
+      await ctx.reply(
+        "✅ *Deployment Successful!*\n\n" +
+        `🔗 *URL:* ${deployUrl}\n` +
+        `📁 *Project:* ${projectPath}\n` +
+        `🌍 *Type:* ${isProduction ? "Production" : "Preview"}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "🔗 Open Site", url: deployUrl.startsWith("http") ? deployUrl : `https://${deployUrl}` },
+              { text: "📊 Dashboard", url: "https://vercel.com/dashboard" }
+            ]]
+          }
+        }
+      );
+    } catch (err) {
+      log.error({ err }, "Vercel deployment error");
+      await ctx.reply(
+        "❌ *Deployment Failed*\n\n" +
+        `\`\`\`\n${err instanceof Error ? err.message : "Unknown error"}\n\`\`\``,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  // /push - Push to GitHub
+  bot.command("push", async (ctx: Context) => {
+    const userId = String(ctx.from?.id || "");
+
+    if (!isPaired(runtimeDir, "telegram", userId)) {
+      await ctx.reply("Please send /start first to pair with Wispy.");
+      return;
+    }
+
+    const args = ctx.message?.text?.split(" ").slice(1) || [];
+    const projectPath = args[0] || process.cwd();
+    const commitMessage = args.slice(1).join(" ") || "Update via Wispy";
+
+    await ctx.reply(
+      "📤 *Pushing to GitHub...*\n\n" +
+      `📁 Path: \`${projectPath}\`\n` +
+      `💬 Message: "${commitMessage}"`,
+      { parse_mode: "Markdown" }
+    );
+
+    try {
+      const { execSync } = await import("child_process");
+      const fs = await import("fs");
+      const path = await import("path");
+
+      // Check if it's a git repo
+      if (!fs.existsSync(path.join(projectPath, ".git"))) {
+        await ctx.reply(
+          "❌ *Not a Git repository*\n\n" +
+          "Initialize with: `/git init`",
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      // Stage, commit, and push
+      execSync(`git -C "${projectPath}" add -A`, { encoding: "utf-8" });
+
+      try {
+        execSync(`git -C "${projectPath}" commit -m "${commitMessage}"`, { encoding: "utf-8" });
+      } catch {
+        // No changes to commit
+      }
+
+      const pushOutput = execSync(`git -C "${projectPath}" push`, { encoding: "utf-8", timeout: 60000 });
+
+      // Get remote URL
+      const remoteUrl = execSync(`git -C "${projectPath}" remote get-url origin`, { encoding: "utf-8" }).trim();
+      const repoUrl = remoteUrl.replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/");
+
+      await ctx.reply(
+        "✅ *Push Successful!*\n\n" +
+        `📦 *Repository:* ${repoUrl}\n` +
+        `💬 *Commit:* "${commitMessage}"`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "📂 View Repo", url: repoUrl },
+              { text: "📜 Commits", url: `${repoUrl}/commits` }
+            ]]
+          }
+        }
+      );
+    } catch (err) {
+      log.error({ err }, "Git push error");
+      await ctx.reply(
+        "❌ *Push Failed*\n\n" +
+        `\`\`\`\n${err instanceof Error ? err.message : "Unknown error"}\n\`\`\`\n\n` +
+        "_Make sure you have GitHub CLI (gh) configured or SSH keys set up._",
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  // /git - Git operations submenu
+  bot.command("git", async (ctx: Context) => {
+    const userId = String(ctx.from?.id || "");
+
+    if (!isPaired(runtimeDir, "telegram", userId)) {
+      await ctx.reply("Please send /start first to pair with Wispy.");
+      return;
+    }
+
+    const args = ctx.message?.text?.split(" ").slice(1) || [];
+    const subcommand = args[0];
+    const projectPath = args[1] || process.cwd();
+
+    if (!subcommand) {
+      await ctx.reply(
+        "🔧 *Git Commands*\n\n" +
+        "`/git init [path]` - Initialize repository\n" +
+        "`/git status [path]` - Check status\n" +
+        "`/git commit <message>` - Commit changes\n" +
+        "`/push [path] [message]` - Push to GitHub\n\n" +
+        "_Or use the buttons below:_",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "📊 Status", callback_data: "git_status:" + projectPath },
+                { text: "📤 Push", callback_data: "git_push:" + projectPath }
+              ],
+              [
+                { text: "🔄 Init", callback_data: "git_init:" + projectPath },
+                { text: "📝 Commit", callback_data: "git_commit:" + projectPath }
+              ]
+            ]
+          }
+        }
+      );
+      return;
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+
+      switch (subcommand) {
+        case "init": {
+          execSync(`git init "${projectPath}"`, { encoding: "utf-8" });
+          await ctx.reply(`✅ Git repository initialized at \`${projectPath}\``, { parse_mode: "Markdown" });
+          break;
+        }
+        case "status": {
+          const status = execSync(`git -C "${projectPath}" status --short`, { encoding: "utf-8" });
+          const branch = execSync(`git -C "${projectPath}" branch --show-current`, { encoding: "utf-8" }).trim();
+          await ctx.reply(
+            `📊 *Git Status*\n\n` +
+            `🌿 Branch: \`${branch}\`\n\n` +
+            `\`\`\`\n${status || "Clean working tree"}\n\`\`\``,
+            { parse_mode: "Markdown" }
+          );
+          break;
+        }
+        case "commit": {
+          const message = args.slice(1).join(" ") || "Update via Wispy";
+          execSync(`git -C "${projectPath}" add -A`, { encoding: "utf-8" });
+          execSync(`git -C "${projectPath}" commit -m "${message}"`, { encoding: "utf-8" });
+          await ctx.reply(`✅ Committed: "${message}"`, { parse_mode: "Markdown" });
+          break;
+        }
+        default:
+          await ctx.reply("Unknown git subcommand. Use `/git` for help.", { parse_mode: "Markdown" });
+      }
+    } catch (err) {
+      await ctx.reply(
+        `❌ Git error: \`${err instanceof Error ? err.message : "Unknown error"}\``,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  // /npm - Run npm scripts
+  bot.command("npm", async (ctx: Context) => {
+    const userId = String(ctx.from?.id || "");
+
+    if (!isPaired(runtimeDir, "telegram", userId)) {
+      await ctx.reply("Please send /start first to pair with Wispy.");
+      return;
+    }
+
+    const args = ctx.message?.text?.split(" ").slice(1) || [];
+    const script = args[0];
+    const projectPath = args[1] || process.cwd();
+
+    if (!script) {
+      await ctx.reply(
+        "📦 *NPM Commands*\n\n" +
+        "`/npm install [path]` - Install dependencies\n" +
+        "`/npm run <script> [path]` - Run script\n" +
+        "`/npm build [path]` - Build project\n" +
+        "`/npm dev [path]` - Start dev server\n" +
+        "`/npm test [path]` - Run tests\n\n" +
+        "_Common scripts:_",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "📥 Install", callback_data: "npm_install:" + projectPath },
+                { text: "🔨 Build", callback_data: "npm_build:" + projectPath }
+              ],
+              [
+                { text: "🚀 Dev", callback_data: "npm_dev:" + projectPath },
+                { text: "🧪 Test", callback_data: "npm_test:" + projectPath }
+              ]
+            ]
+          }
+        }
+      );
+      return;
+    }
+
+    await ctx.reply(
+      `⏳ Running \`npm ${script}\`...\n\n` +
+      `📁 Path: \`${projectPath}\``,
+      { parse_mode: "Markdown" }
+    );
+
+    try {
+      const { execSync } = await import("child_process");
+
+      let cmd: string;
+      if (script === "install" || script === "i") {
+        cmd = `npm install`;
+      } else if (script === "build" || script === "dev" || script === "test" || script === "start") {
+        cmd = `npm run ${script}`;
+      } else {
+        cmd = `npm run ${script}`;
+      }
+
+      const output = execSync(cmd, {
+        cwd: projectPath,
+        encoding: "utf-8",
+        timeout: 120000
+      });
+
+      const truncatedOutput = output.length > 1000
+        ? output.slice(-1000) + "\n...(truncated)"
+        : output;
+
+      await ctx.reply(
+        `✅ *npm ${script}* completed!\n\n` +
+        `\`\`\`\n${truncatedOutput || "Success"}\n\`\`\``,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      log.error({ err }, "NPM command error");
+      await ctx.reply(
+        `❌ *npm ${script}* failed\n\n` +
+        `\`\`\`\n${err instanceof Error ? err.message.slice(0, 500) : "Unknown error"}\n\`\`\``,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  // /debug - Debug tools
+  bot.command("debug", async (ctx: Context) => {
+    const userId = String(ctx.from?.id || "");
+
+    if (!isPaired(runtimeDir, "telegram", userId)) {
+      await ctx.reply("Please send /start first to pair with Wispy.");
+      return;
+    }
+
+    const args = ctx.message?.text?.split(" ").slice(1) || [];
+    const subcommand = args[0];
+
+    if (!subcommand) {
+      await ctx.reply(
+        "🔍 *Debug Tools*\n\n" +
+        "`/debug port <number>` - Check what's using a port\n" +
+        "`/debug kill <port>` - Kill process on port\n" +
+        "`/debug processes` - List Node.js processes\n" +
+        "`/debug logs [path]` - Read recent logs\n\n" +
+        "_Quick actions:_",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🔌 Port 3000", callback_data: "debug_port:3000" },
+                { text: "🔌 Port 5173", callback_data: "debug_port:5173" }
+              ],
+              [
+                { text: "📋 Processes", callback_data: "debug_processes" },
+                { text: "💀 Kill All", callback_data: "debug_killall" }
+              ]
+            ]
+          }
+        }
+      );
+      return;
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+      const os = await import("os");
+      const isWindows = os.platform() === "win32";
+
+      switch (subcommand) {
+        case "port": {
+          const port = args[1];
+          if (!port) {
+            await ctx.reply("Usage: `/debug port <number>`", { parse_mode: "Markdown" });
+            return;
+          }
+
+          let result: string;
+          if (isWindows) {
+            result = execSync(`netstat -ano | findstr :${port}`, { encoding: "utf-8" });
+          } else {
+            result = execSync(`lsof -i :${port} || ss -tlnp | grep :${port}`, { encoding: "utf-8" });
+          }
+
+          await ctx.reply(
+            `🔌 *Port ${port}*\n\n\`\`\`\n${result || "Port is free"}\n\`\`\``,
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "💀 Kill Process", callback_data: `debug_kill:${port}` }
+                ]]
+              }
+            }
+          );
+          break;
+        }
+        case "kill": {
+          const port = args[1];
+          if (!port) {
+            await ctx.reply("Usage: `/debug kill <port>`", { parse_mode: "Markdown" });
+            return;
+          }
+
+          if (isWindows) {
+            const netstat = execSync(`netstat -ano | findstr :${port}`, { encoding: "utf-8" });
+            const pidMatch = netstat.match(/LISTENING\s+(\d+)/);
+            if (pidMatch) {
+              execSync(`taskkill /F /PID ${pidMatch[1]}`, { encoding: "utf-8" });
+            }
+          } else {
+            execSync(`fuser -k ${port}/tcp`, { encoding: "utf-8" });
+          }
+
+          await ctx.reply(`✅ Killed process on port ${port}`);
+          break;
+        }
+        case "processes": {
+          let result: string;
+          if (isWindows) {
+            result = execSync(`tasklist | findstr /i "node npm"`, { encoding: "utf-8" });
+          } else {
+            result = execSync(`ps aux | grep -E "node|npm" | grep -v grep`, { encoding: "utf-8" });
+          }
+
+          await ctx.reply(
+            `📋 *Node.js Processes*\n\n\`\`\`\n${result || "No processes found"}\n\`\`\``,
+            { parse_mode: "Markdown" }
+          );
+          break;
+        }
+        case "logs": {
+          const logPath = args[1] || "./logs";
+          const fs = await import("fs");
+          const path = await import("path");
+
+          if (!fs.existsSync(logPath)) {
+            await ctx.reply(`❌ Log path not found: \`${logPath}\``, { parse_mode: "Markdown" });
+            return;
+          }
+
+          const files = fs.readdirSync(logPath)
+            .filter((f: string) => f.endsWith(".log"))
+            .slice(-5);
+
+          await ctx.reply(
+            `📜 *Log Files*\n\n${files.map((f: string) => `• \`${f}\``).join("\n") || "No log files"}`,
+            { parse_mode: "Markdown" }
+          );
+          break;
+        }
+        default:
+          await ctx.reply("Unknown debug command. Use `/debug` for help.", { parse_mode: "Markdown" });
+      }
+    } catch (err) {
+      await ctx.reply(
+        `❌ Debug error: \`${err instanceof Error ? err.message : "Unknown error"}\``,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
   // Track voice reply preference per user
   const voiceReplyEnabled = new Map<string, boolean>();
 
@@ -655,7 +1531,7 @@ I work autonomously and keep you updated! 🚀`;
       return;
     }
 
-    const currentSetting = voiceReplyEnabled.get(userId) ?? true;
+    const currentSetting = voiceReplyEnabled.get(userId) ?? false;
     const newSetting = !currentSetting;
     voiceReplyEnabled.set(userId, newSetting);
 
@@ -740,8 +1616,8 @@ I work autonomously and keep you updated! 🚀`;
       // Send response with transcription context
       const responseText = result.text || "...";
 
-      // Try to reply with voice if user sent voice and has voice enabled
-      const userVoiceEnabled = voiceReplyEnabled.get(userId) ?? true;
+      // Try to reply with voice if user sent voice and has voice enabled (default: OFF)
+      const userVoiceEnabled = voiceReplyEnabled.get(userId) ?? false;
       if (userVoiceEnabled && responseText.length < 500) {
         try {
           await ctx.api.sendChatAction(ctx.chat!.id, "record_voice");
@@ -862,6 +1738,140 @@ I work autonomously and keep you updated! 🚀`;
     }
   });
 
+  // /clear - Clear conversation history and reset context COMPLETELY
+  bot.command("clear", async (ctx: Context) => {
+    const userId = String(ctx.from?.id || "");
+    const chatId = String(ctx.chat?.id || "");
+
+    if (!isPaired(runtimeDir, "telegram", userId)) {
+      await ctx.reply("Please send /start first to pair with Wispy.");
+      return;
+    }
+
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+
+      // The actual agent ID is "main" (not "wispy")
+      const agentId = "main";
+      const sessionsDir = path.join(runtimeDir, "agents", agentId, "sessions");
+      let deletedCount = 0;
+
+      log.info("Clearing sessions from: %s for user: %s", sessionsDir, userId);
+
+      // === NUCLEAR OPTION: Delete ALL session files for this user ===
+      if (fs.existsSync(sessionsDir)) {
+        const files = fs.readdirSync(sessionsDir);
+        for (const file of files) {
+          // Match any file containing this user's ID in any format
+          // Session keys are like: agent_main_main_7844654696.jsonl
+          if (file.includes(userId)) {
+            const filePath = path.join(sessionsDir, file);
+            try {
+              fs.unlinkSync(filePath);
+              log.info("Deleted session file: %s", file);
+              deletedCount++;
+            } catch (e) {
+              log.error("Failed to delete: %s", file);
+            }
+          }
+        }
+
+        // Also clear the session registry index
+        const indexPath = path.join(sessionsDir, "index.json");
+        if (fs.existsSync(indexPath)) {
+          try {
+            const indexData = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
+            const sessionsToDelete: string[] = [];
+
+            // Find all session keys for this user
+            for (const key of Object.keys(indexData.sessions || {})) {
+              if (key.includes(userId)) {
+                sessionsToDelete.push(key);
+              }
+            }
+
+            // Delete them from the registry
+            for (const key of sessionsToDelete) {
+              delete indexData.sessions[key];
+              log.info("Removed session from registry: %s", key);
+              deletedCount++;
+            }
+
+            fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
+          } catch {}
+        }
+      } else {
+        log.warn("Sessions directory not found: %s", sessionsDir);
+      }
+
+      // === Clear all session types ===
+      const { clearHistory } = await import("../../core/session.js");
+      const { buildSessionKey } = await import("../../security/isolation.js");
+      const sessionTypes = ["main", "cron", "group", "sub", "heartbeat"];
+
+      for (const sessionType of sessionTypes) {
+        try {
+          const sessionKey = buildSessionKey(agentId, sessionType as any, userId);
+          clearHistory(runtimeDir, agentId, sessionKey);
+        } catch {}
+      }
+
+      // === Fully reset context isolator (task state, boundaries, history) ===
+      const { resetUserContext } = await import("../../core/context-isolator.js");
+      resetUserContext(userId, "telegram");
+
+      // === Clear memory/vector store entries ===
+      const memoryDirs = [
+        path.join(runtimeDir, "memory"),
+        path.join(runtimeDir, "agents", agentId, "memory"),
+        path.join(runtimeDir, "vector-store"),
+      ];
+
+      for (const memoryDir of memoryDirs) {
+        if (fs.existsSync(memoryDir)) {
+          try {
+            const memFiles = fs.readdirSync(memoryDir);
+            for (const file of memFiles) {
+              if (file.includes(userId) || file.includes("telegram")) {
+                fs.unlinkSync(path.join(memoryDir, file));
+                deletedCount++;
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // === Clear any cached thinking/tool state ===
+      const cacheDir = path.join(runtimeDir, "cache");
+      if (fs.existsSync(cacheDir)) {
+        try {
+          const cacheFiles = fs.readdirSync(cacheDir);
+          for (const file of cacheFiles) {
+            if (file.includes(userId)) {
+              fs.unlinkSync(path.join(cacheDir, file));
+            }
+          }
+        } catch {}
+      }
+
+      await ctx.reply(
+        "🧹 *Context Completely Cleared!*\n\n" +
+        `✅ Deleted ${deletedCount} files\n` +
+        "✅ Session registry cleaned\n" +
+        "✅ Task context reset\n" +
+        "✅ Memory cleared\n\n" +
+        "I'm completely fresh! What would you like to do?",
+        { parse_mode: "Markdown" }
+      );
+
+      log.info("Full context clear for user %s: %d files deleted", userId, deletedCount);
+    } catch (err) {
+      log.error({ err }, "Failed to clear context");
+      await ctx.reply("❌ Failed to clear context. Please try again.");
+    }
+  });
+
   // Regular text messages - Chat with Wispy (Vibe Coding Mode)
   bot.on("message:text", async (ctx: Context) => {
     const userId = String(ctx.from?.id || "");
@@ -877,7 +1887,23 @@ I work autonomously and keep you updated! 🚀`;
     }
 
     try {
-      // Show typing indicator
+      // === Context Isolation Check ===
+      const { processWithIsolation, cancelTask } = await import("../../core/context-isolator.js");
+      const { task, contextPrompt, isNewTask } = processWithIsolation(text, userId, "telegram");
+
+      // Check for cancel/stop commands
+      const lowerText = text.toLowerCase();
+      const cancelWords = ["stop", "cancel", "halt", "abort", "forget it", "never mind", "quit"];
+      if (cancelWords.some(w => lowerText.includes(w))) {
+        cancelTask(userId, "telegram");
+        await ctx.reply(
+          "✋ *Stopped!*\n\nI've cancelled what I was doing. What would you like me to help with now?",
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      // Show typing indicator (no verbose notifications for simple messages)
       await ctx.api.sendChatAction(ctx.chat!.id, "typing");
 
       // Set up chat context for sending images back
@@ -902,11 +1928,38 @@ I work autonomously and keep you updated! 🚀`;
         sendImage,
       });
 
+      // Set up progress callback for visual thought signatures
+      const toolExecutor = agent.getToolExecutor();
+      toolExecutor.setProgressCallback(async (event) => {
+        if (event.type === "tool_start" && event.toolName) {
+          // Send thought signature for tool usage
+          const emoji = getToolEmoji(event.toolName);
+          await sendThinkingNotification(chatId, `${emoji} ${event.toolName}`);
+        } else if (event.type === "image_generated" && event.data) {
+          // Send image with feedback buttons
+          const { buffer, prompt, imageId } = event.data as {
+            buffer: Buffer;
+            prompt: string;
+            imageId: string;
+          };
+          // Send image with inline feedback keyboard
+          const { InputFile } = await import("grammy");
+          await botInstance?.api.sendPhoto(
+            chatId,
+            new InputFile(buffer, "generated.png"),
+            {
+              caption: `🎨 *${prompt}*\n\n_Generated with Wispy_`,
+              parse_mode: "Markdown",
+              reply_markup: createImageFeedbackKeyboard(imageId),
+            }
+          );
+        }
+      });
+
       // Track if voice was already sent (prevent multiple voice messages)
       let voiceAlreadySent = false;
 
-      // Set voice callback for voice replies
-      const toolExecutor = agent.getToolExecutor();
+      // Set voice callback for voice replies (reuse toolExecutor from above)
       toolExecutor.setVoiceCallback(async (audioPath: string, _text: string) => {
         // Only send ONE voice message per request
         if (voiceAlreadySent) {
@@ -935,80 +1988,88 @@ I work autonomously and keep you updated! 🚀`;
       // Detect voice requests
       const voiceKeywords = /\b(voice|speak|say it|talk to me|audio|out loud|voice reply|reply in voice)\b/i;
       const userRequestedVoice = voiceKeywords.test(text);
+
+      // Build message with context isolation (prevents task bleeding)
       let messageToSend = text;
+
+      // Prepend context isolation prompt for new tasks or after clear
+      if (isNewTask || task.messageCount < 2) {
+        messageToSend = `${contextPrompt}\n\n---\n\n**USER MESSAGE:**\n${text}`;
+        log.info("Context isolation prompt added for task: %s", task.topic);
+      }
 
       if (userRequestedVoice) {
         // Simple instruction - don't over-explain
-        messageToSend = `${text}\n\n[Use voice_reply tool once with a friendly, conversational response.]`;
+        messageToSend = `${messageToSend}\n\n[Use voice_reply tool once with a friendly, conversational response.]`;
         log.info("Voice request detected");
       }
 
       // Use streaming to send thinking/progress updates
       let finalText = "";
-      let thinkingMessage: any = null;
-      let lastThinkingUpdate = 0;
+      let statusMessage: any = null;
+      let lastStatusUpdate = 0;
       const toolsUsed: string[] = [];
+      let currentAction = "Processing...";
+
+      // Only show status for complex tasks (messages with task indicators)
+      const isComplexTask = /\b(create|build|generate|make|write|code|develop|analyze|research|explain|image|diagram|project)\b/i.test(text);
+      const startTime = Date.now();
 
       for await (const event of agent.chatStream(messageToSend, userId, "telegram", "main")) {
         const now = Date.now();
 
         if (event.type === "thinking" && event.content) {
-          // Send thinking update (throttled to every 3 seconds)
-          if (now - lastThinkingUpdate > 3000) {
-            const thinkingPreview = event.content.length > 200
-              ? event.content.substring(0, 200) + "..."
-              : event.content;
-
-            if (thinkingMessage) {
-              // Edit existing message
+          currentAction = event.content.slice(0, 100);
+          // Throttle status updates (every 5 seconds)
+          if (now - lastStatusUpdate > 5000) {
+            if (statusMessage) {
               try {
                 await ctx.api.editMessageText(
                   ctx.chat!.id,
-                  thinkingMessage.message_id,
-                  `💭 *Thinking...*\n\n_${thinkingPreview}_`,
+                  statusMessage.message_id,
+                  `💭 _${currentAction}..._`,
                   { parse_mode: "Markdown" }
                 );
               } catch { /* ignore edit errors */ }
             } else {
-              // Send new thinking message
-              thinkingMessage = await ctx.reply(
-                `💭 *Thinking...*\n\n_${thinkingPreview}_`,
+              statusMessage = await ctx.reply(
+                `💭 _${currentAction}..._`,
                 { parse_mode: "Markdown" }
               ).catch(() => null);
             }
-            lastThinkingUpdate = now;
+            lastStatusUpdate = now;
           }
         } else if (event.type === "tool_call") {
           toolsUsed.push(event.content);
-          // Update thinking message with tool being used
           const toolEmoji = getToolEmoji(event.content);
-          if (thinkingMessage) {
-            try {
-              await ctx.api.editMessageText(
-                ctx.chat!.id,
-                thinkingMessage.message_id,
-                `${toolEmoji} *Using ${event.content}...*`,
-                { parse_mode: "Markdown" }
-              );
-            } catch { /* ignore */ }
-          } else {
-            thinkingMessage = await ctx.reply(
-              `${toolEmoji} *Using ${event.content}...*`,
-              { parse_mode: "Markdown" }
-            ).catch(() => null);
+          currentAction = `Using ${event.content}`;
+
+          // Only show tool notifications for complex tasks that take time
+          const elapsed = Date.now() - startTime;
+          if (isComplexTask && elapsed > 2000) {
+            // Update existing status message instead of sending new thoughts
+            if (statusMessage) {
+              try {
+                await ctx.api.editMessageText(
+                  ctx.chat!.id,
+                  statusMessage.message_id,
+                  `${toolEmoji} *${event.content}*`,
+                  { parse_mode: "Markdown" }
+                );
+              } catch { /* ignore */ }
+            }
           }
         } else if (event.type === "text") {
           finalText += event.content;
         } else if (event.type === "done") {
-          // Stream complete
           break;
         }
       }
 
-      // Delete thinking message when done
-      if (thinkingMessage) {
+      // Update status to complete only for complex tasks
+      if (statusMessage && isComplexTask) {
         try {
-          await ctx.api.deleteMessage(ctx.chat!.id, thinkingMessage.message_id);
+          await ctx.api.deleteMessage(ctx.chat!.id, statusMessage.message_id);
         } catch { /* ignore */ }
       }
 

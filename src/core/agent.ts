@@ -27,7 +27,12 @@ import { createLogger } from "../infra/logger.js";
 
 const log = createLogger("agent");
 
-const MAX_TOOL_LOOPS = 10;
+// Increased to 200 for autonomous webapp generation + follow-up tasks + debugging
+// Each tool call = one file write, one bash command, etc.
+// Complex projects need 15-25 tool calls, follow-ups + debugging need more
+// Marathon mode and persistent conversations require high limits
+// This prevents "Reached maximum tool execution steps" errors
+const MAX_TOOL_LOOPS = 200;
 
 export interface AgentContext {
   config: WispyConfig;
@@ -346,6 +351,27 @@ export class Agent {
     const { config, runtimeDir, soulDir } = this.ctx;
     const agentId = config.agent.id;
 
+    // === Context Isolation ===
+    // Detect task boundaries and prevent context bleeding
+    const { processWithIsolation, cancelTask, isTaskCancelled } = await import("./context-isolator.js");
+    const { task, contextPrompt, isNewTask } = processWithIsolation(userMessage, peerId, channel);
+
+    // Check for cancellation requests
+    const lowerMsg = userMessage.toLowerCase();
+    const cancelPhrases = ["stop", "cancel", "halt", "abort", "quit that", "forget it", "never mind"];
+    const isCancel = cancelPhrases.some(p => lowerMsg.includes(p));
+    if (isCancel) {
+      cancelTask(peerId, channel);
+      log.info("Task cancelled by user: %s", task.id);
+      return {
+        text: "Got it! I've stopped what I was doing. What would you like me to help you with now?",
+      };
+    }
+
+    if (isNewTask) {
+      log.info("New task started: %s - %s", task.id, task.topic);
+    }
+
     // NLP-based marathon control (natural language interface)
     if (this.marathonService && this.apiKey) {
       try {
@@ -407,7 +433,10 @@ export class Agent {
     const thinkingLevel = inferThinkingLevel(userMessage);
     const route = routeTask("reasoning", config);
     const integrationCtx = this.buildIntegrationContext();
-    const systemPrompt = buildSystemPrompt(soulDir, sessionType, undefined, integrationCtx);
+    const baseSystemPrompt = buildSystemPrompt(soulDir, sessionType, undefined, integrationCtx);
+
+    // Add context isolation to prevent task bleeding
+    const systemPrompt = `${baseSystemPrompt}\n\n${contextPrompt}`;
 
     // Auto-compact if context is getting full
     const compactResult = await this.autoCompactIfNeeded(agentId, session.sessionKey, rawMessages, systemPrompt);

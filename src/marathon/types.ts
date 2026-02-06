@@ -245,6 +245,8 @@ export type MarathonEventType =
   | "tool_executing"
   | "tool_completed"
   | "thinking"
+  | "verification_started"
+  | "verification_completed"
   | "approval_needed"
   | "approval_granted"
   | "approval_rejected"

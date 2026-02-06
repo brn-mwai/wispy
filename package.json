@@ -1,6 +1,6 @@
 {
   "name": "wispy-ai",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "description": "Autonomous AI agent with Marathon Mode — multi-day task execution powered by Gemini 3 with Thinking Levels & Thought Signatures, multi-agent orchestration, 27+ integrations",
   "type": "module",
   "bin": {
@@ -18,10 +18,14 @@
   ],
   "scripts": {
     "dev": "tsx src/cli/program.ts gateway",
+    "cli": "tsx src/cli/program.ts",
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "start": "node dist/cli/program.js gateway",
     "doctor": "tsx src/cli/program.ts doctor",
+    "skill": "tsx src/cli/program.ts skill",
+    "setup": "tsx src/cli/program.ts setup",
+    "integrations": "tsx src/cli/program.ts integrations",
     "postinstall": "node ./dist/cli/postinstall.js 2>/dev/null || true",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -54,7 +58,7 @@
     "type": "git",
     "url": "https://github.com/brn-mwai/wispy.git"
   },
-  "homepage": "https://github.com/brn-mwai/wispy#readme",
+  "homepage": "https://wispy.cc",
   "bugs": {
     "url": "https://github.com/brn-mwai/wispy/issues"
   },
@@ -64,6 +68,7 @@
     "@google-cloud/text-to-speech": "^5.5.0",
     "@google/genai": "^1.0.0",
     "@hapi/boom": "^10.0.1",
+    "@huggingface/inference": "^3.15.0",
     "@lucid-agents/a2a": "^0.5.5",
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@whiskeysockets/baileys": "^6.7.0",
@@ -117,6 +122,7 @@
     "playwright-core": "^1.50.0",
     "qrcode": "^1.5.0",
     "qrcode-terminal": "^0.12.0",
+    "replicate": "^1.4.0",
     "rss-parser": "^3.13.0",
     "sharp": "^0.33.0",
     "svg-to-pdfkit": "^0.1.0",

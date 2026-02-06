@@ -13,9 +13,9 @@ const DEFAULT_CONFIG: WispyConfig = {
   },
   gemini: {
     models: {
-      pro: "gemini-3-pro-preview",         // Gemini 3 Pro - advanced reasoning, 1M context
-      flash: "gemini-3-flash-preview",     // Gemini 3 Flash - pro-level at flash speed
-      image: "gemini-3-pro-image-preview", // Gemini 3 Image - highest quality generation
+      pro: "gemini-2.5-pro-preview-05-06",   // Gemini 2.5 Pro - 1M context, thinking, best reasoning
+      flash: "gemini-2.5-flash-preview-05-20", // Gemini 2.5 Flash - fast, thinking-enabled
+      image: "imagen-3.0-generate-002",        // Imagen 3 - highest quality image generation
       embedding: "text-embedding-004",
     },
   },

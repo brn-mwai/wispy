@@ -357,7 +357,21 @@ export async function generateVoiceWithGemini(
       }
     }
   } catch (err) {
-    log.debug("Gemini audio not available, falling back to local TTS");
+    log.debug("Gemini audio not available, trying Hugging Face TTS");
+  }
+
+  // Try Hugging Face realistic TTS
+  try {
+    const { generateVoiceForTelegram, isHuggingFaceTTSAvailable } = await import("../../voice/realistic-tts.js");
+    if (isHuggingFaceTTSAvailable()) {
+      const hfResult = await generateVoiceForTelegram(text, outputDir, { model: "auto", voice: "assistant" });
+      if (hfResult) {
+        log.info("Generated voice with Hugging Face TTS: %s", hfResult);
+        return hfResult;
+      }
+    }
+  } catch (hfErr) {
+    log.debug("Hugging Face TTS not available, falling back to local TTS");
   }
 
   // Fall back to local TTS

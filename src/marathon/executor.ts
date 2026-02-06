@@ -20,6 +20,12 @@ import type {
 import { updateMilestoneStatus, getNextMilestone, getPlanProgress } from "./planner.js";
 import { createHash } from "crypto";
 import { sendTelegramMessage } from "../channels/telegram/adapter.js";
+import {
+  updateProgressMessage,
+  sendMilestoneNotification,
+  sendMarathonComplete,
+  sendVerificationNotification,
+} from "./telegram-visuals.js";
 
 const execAsync = promisify(exec);
 
@@ -94,10 +100,36 @@ export class MarathonExecutor {
   private readonly MAX_IDENTICAL_ACTIONS = 3;
   private readonly ACTION_HISTORY_WINDOW = 10;
 
-  constructor(agent: Agent, apiKey: string, state: MarathonState) {
+  // Telegram integration for visual updates
+  private telegramBot: any = null;
+  private telegramChatId: string | null = null;
+
+  // Stats tracking for visuals
+  private stats = {
+    startTime: Date.now(),
+    tokensUsed: 0,
+    toolCalls: 0,
+    filesCreated: 0,
+  };
+
+  constructor(
+    agent: Agent,
+    apiKey: string,
+    state: MarathonState,
+    options?: {
+      telegramBot?: any;
+      telegramChatId?: string;
+    }
+  ) {
     this.agent = agent;
     this.apiKey = apiKey;
     this.state = state;
+    if (options?.telegramBot) {
+      this.telegramBot = options.telegramBot;
+    }
+    if (options?.telegramChatId) {
+      this.telegramChatId = options.telegramChatId;
+    }
   }
 
   /**
@@ -492,10 +524,33 @@ DO NOT repeat the same actions. Try something fundamentally different.`;
   }
 
   private async notifyMilestoneComplete(milestone: Milestone): Promise<void> {
+    const progress = getPlanProgress(this.state.plan);
+    const milestoneIndex = this.state.plan.milestones.findIndex(m => m.id === milestone.id);
+    const totalMilestones = this.state.plan.milestones.length;
+
+    // Send visual Telegram notification using enhanced visuals
+    if (this.telegramChatId) {
+      try {
+        await sendMilestoneNotification(
+          this.telegramChatId,
+          milestone,
+          milestoneIndex + 1,
+          totalMilestones,
+          "complete",
+          {
+            duration: (Date.now() - this.stats.startTime) / 60000,
+            artifacts: milestone.artifacts,
+          }
+        );
+        this.log("info", "Telegram visual notification sent");
+      } catch (e) {
+        this.log("warn", "Failed to send Telegram visual notification");
+      }
+    }
+
     if (!this.state.notifications.enabled) return;
     if (!this.state.notifications.notifyOn.milestoneComplete) return;
 
-    const progress = getPlanProgress(this.state.plan);
     const message = `✅ *Milestone Completed*\n\n` +
       `*${milestone.title}*\n\n` +
       `Progress: ${progress.completed}/${progress.total} (${progress.percentage}%)\n` +
@@ -505,10 +560,33 @@ DO NOT repeat the same actions. Try something fundamentally different.`;
   }
 
   private async notifyMilestoneFailure(milestone: Milestone, error: string): Promise<void> {
+    const progress = getPlanProgress(this.state.plan);
+    const milestoneIndex = this.state.plan.milestones.findIndex(m => m.id === milestone.id);
+    const totalMilestones = this.state.plan.milestones.length;
+
+    // Send visual Telegram notification using enhanced visuals
+    if (this.telegramChatId) {
+      try {
+        await sendMilestoneNotification(
+          this.telegramChatId,
+          milestone,
+          milestoneIndex + 1,
+          totalMilestones,
+          "failed",
+          {
+            error: error,
+            retryCount: milestone.retryCount,
+          }
+        );
+        this.log("info", "Telegram visual notification sent");
+      } catch (e) {
+        this.log("warn", "Failed to send Telegram visual notification");
+      }
+    }
+
     if (!this.state.notifications.enabled) return;
     if (!this.state.notifications.notifyOn.milestoneFailure) return;
 
-    const progress = getPlanProgress(this.state.plan);
     const message = `❌ *Milestone Failed*\n\n` +
       `*${milestone.title}*\n\n` +
       `Error: ${error.slice(0, 200)}\n` +

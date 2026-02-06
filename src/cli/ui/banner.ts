@@ -24,7 +24,7 @@ export interface BannerOptions {
 
 export function showBanner(modelNameOrOptions?: string | BannerOptions): void {
   const cwd = process.cwd();
-  const version = "v0.6.2";
+  const version = "v1.0.0";
 
   // Handle both old signature (string) and new signature (options object)
   let modelName: string | undefined;

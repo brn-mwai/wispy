@@ -28,6 +28,17 @@ import type {
 } from "./types.js";
 import { updateMilestoneStatus, getNextMilestone, getPlanProgress } from "./planner.js";
 import { sendTelegramMessage } from "../channels/telegram/adapter.js";
+import {
+  initMarathonVisuals,
+  sendPlanningMessage,
+  updateProgressMessage,
+  sendMilestoneNotification,
+  sendApprovalRequest,
+  sendMarathonComplete,
+  sendThinkingNotification,
+  formatProgressMessage,
+  createMarathonControlKeyboard,
+} from "./telegram-visuals.js";
 
 export class DurableMarathonExecutor extends EventEmitter {
   private agent: Agent;
@@ -52,6 +63,19 @@ export class DurableMarathonExecutor extends EventEmitter {
   // State persistence path
   private statePath: string;
 
+  // Enhanced stats tracking for visuals
+  private stats = {
+    startTime: Date.now(),
+    tokensUsed: 0,
+    toolCalls: 0,
+    filesCreated: 0,
+    milestoneStartTime: 0,
+  };
+
+  // Telegram bot instance for enhanced visuals
+  private telegramBot: any = null;
+  private telegramChatId: string | null = null;
+
   constructor(agent: Agent, apiKey: string, state: DurableMarathonState) {
     super();
     this.agent = agent;
@@ -71,6 +95,29 @@ export class DurableMarathonExecutor extends EventEmitter {
     // Set process info for watchdog
     this.state.processId = process.pid;
     this.state.startedByHost = process.env.HOSTNAME || "local";
+  }
+
+  /**
+   * Initialize Telegram bot for enhanced visuals
+   */
+  setTelegramBot(bot: any, chatId: string): void {
+    this.telegramBot = bot;
+    this.telegramChatId = chatId;
+    if (bot) {
+      initMarathonVisuals(bot);
+    }
+  }
+
+  /**
+   * Get current marathon stats
+   */
+  getStats() {
+    return {
+      duration: Date.now() - this.stats.startTime,
+      tokensUsed: this.stats.tokensUsed,
+      toolCalls: this.stats.toolCalls,
+      filesCreated: this.stats.filesCreated,
+    };
   }
 
   /**
@@ -121,12 +168,23 @@ export class DurableMarathonExecutor extends EventEmitter {
   async run(): Promise<DurableMarathonState> {
     this.log("info", "Durable Marathon executor started");
     this.state.status = "executing";
+    this.stats.startTime = Date.now();
 
     // Start heartbeat
     this.startHeartbeat();
 
     // Emit started event
     this.emitEvent("started", { goal: this.state.plan.goal });
+
+    // Send enhanced planning message via Telegram
+    if (this.telegramChatId) {
+      await sendPlanningMessage(
+        this.telegramChatId,
+        this.state.plan,
+        this.state.id,
+        24576 // Ultra thinking tokens
+      );
+    }
 
     try {
       while (!this.aborted && !this.paused) {
@@ -153,6 +211,16 @@ export class DurableMarathonExecutor extends EventEmitter {
               completedAt: this.state.completedAt,
               artifacts: this.state.artifacts,
             });
+
+            // Send enhanced completion message
+            if (this.telegramChatId) {
+              await sendMarathonComplete(
+                this.telegramChatId,
+                this.state,
+                this.getStats(),
+                this.state.artifacts
+              );
+            }
           }
           break;
         }
@@ -186,6 +254,22 @@ export class DurableMarathonExecutor extends EventEmitter {
   private async executeMilestone(milestone: Milestone): Promise<void> {
     this.log("info", `Starting milestone: ${milestone.title}`, milestone.id);
     this.emitEvent("milestone_started", { milestone: milestone.title });
+    this.stats.milestoneStartTime = Date.now();
+
+    // Get milestone index
+    const milestoneIndex = this.state.plan.milestones.findIndex(m => m.id === milestone.id);
+    const totalMilestones = this.state.plan.milestones.length;
+
+    // Send enhanced milestone start notification
+    if (this.telegramChatId) {
+      await sendMilestoneNotification(
+        this.telegramChatId,
+        milestone,
+        milestoneIndex,
+        totalMilestones,
+        "start"
+      );
+    }
 
     // Update status
     this.state.plan = updateMilestoneStatus(
@@ -195,6 +279,11 @@ export class DurableMarathonExecutor extends EventEmitter {
       { startedAt: new Date().toISOString() }
     );
     this.persistState();
+
+    // Update progress message
+    if (this.telegramChatId) {
+      await updateProgressMessage(this.state.id, this.state);
+    }
 
     try {
       // Build execution prompt
@@ -223,6 +312,7 @@ export class DurableMarathonExecutor extends EventEmitter {
       const verified = await this.verifyMilestone(milestone);
 
       if (verified) {
+        const milestoneDuration = Date.now() - this.stats.milestoneStartTime;
         this.state.plan = updateMilestoneStatus(
           this.state.plan,
           milestone.id,
@@ -235,7 +325,20 @@ export class DurableMarathonExecutor extends EventEmitter {
         );
         this.log("success", `Milestone completed: ${milestone.title}`, milestone.id);
         this.emitEvent("milestone_completed", { milestone: milestone.title });
-        await this.notifyMilestoneComplete(milestone);
+
+        // Enhanced milestone completion notification
+        const milestoneIndex = this.state.plan.milestones.findIndex(m => m.id === milestone.id);
+        if (this.telegramChatId) {
+          await sendMilestoneNotification(
+            this.telegramChatId,
+            milestone,
+            milestoneIndex,
+            this.state.plan.milestones.length,
+            "complete",
+            { duration: milestoneDuration, artifacts: milestone.artifacts }
+          );
+          await updateProgressMessage(this.state.id, this.state);
+        }
       } else {
         throw new Error("Verification failed");
       }
@@ -247,6 +350,20 @@ export class DurableMarathonExecutor extends EventEmitter {
       if (milestone.retryCount < milestone.maxRetries) {
         milestone.retryCount++;
         this.log("info", `Attempting recovery (${milestone.retryCount}/${milestone.maxRetries})`, milestone.id);
+
+        // Enhanced failure notification with retry info
+        const milestoneIndex = this.state.plan.milestones.findIndex(m => m.id === milestone.id);
+        if (this.telegramChatId) {
+          await sendMilestoneNotification(
+            this.telegramChatId,
+            milestone,
+            milestoneIndex,
+            this.state.plan.milestones.length,
+            "failed",
+            { error: errorMsg, retryCount: milestone.retryCount }
+          );
+        }
+
         await this.attemptRecovery(milestone, errorMsg);
       } else {
         this.state.plan = updateMilestoneStatus(
@@ -256,7 +373,19 @@ export class DurableMarathonExecutor extends EventEmitter {
           { errorLog: errorMsg }
         );
         this.emitEvent("milestone_failed", { milestone: milestone.title, error: errorMsg });
-        await this.notifyMilestoneFailure(milestone, errorMsg);
+
+        // Enhanced failure notification (max retries reached)
+        const milestoneIndex = this.state.plan.milestones.findIndex(m => m.id === milestone.id);
+        if (this.telegramChatId) {
+          await sendMilestoneNotification(
+            this.telegramChatId,
+            milestone,
+            milestoneIndex,
+            this.state.plan.milestones.length,
+            "failed",
+            { error: errorMsg, retryCount: milestone.retryCount }
+          );
+        }
       }
     }
   }
@@ -295,6 +424,12 @@ export class DurableMarathonExecutor extends EventEmitter {
         "main"
       );
 
+      // Track stats
+      this.stats.toolCalls++;
+      // Estimate tokens from response length (rough approximation)
+      const estimatedTokens = Math.ceil(response.text.length / 4);
+      this.stats.tokensUsed += estimatedTokens;
+
       // Update checkpoint
       checkpoint.toolResult = response.text.slice(0, 500);
       checkpoint.status = "completed";
@@ -304,6 +439,11 @@ export class DurableMarathonExecutor extends EventEmitter {
         checkpointId: checkpoint.id,
         success: true,
       });
+
+      // Update progress after action
+      if (this.telegramChatId) {
+        await updateProgressMessage(this.state.id, this.state);
+      }
 
       return response.text;
     } catch (error) {
@@ -706,36 +846,153 @@ Try a COMPLETELY DIFFERENT strategy. DO NOT repeat the same actions.`;
   }
 
   private async verifyMilestone(milestone: Milestone): Promise<boolean> {
-    if (milestone.verificationSteps.length === 0) {
-      return milestone.artifacts.every(artifact =>
-        existsSync(resolve(this.state.workingDirectory, artifact))
-      );
+    this.log("info", `Verifying milestone: ${milestone.title}`, milestone.id);
+    this.emitEvent("verification_started", { milestone: milestone.title });
+
+    const verificationResults: Array<{ step: string; passed: boolean; output?: string }> = [];
+
+    // Step 1: Check if all expected artifacts exist
+    const artifactResults: string[] = [];
+    for (const artifact of milestone.artifacts) {
+      const artifactPath = resolve(this.state.workingDirectory, artifact);
+      const exists = existsSync(artifactPath);
+      artifactResults.push(`${exists ? "✅" : "❌"} ${artifact}`);
+      if (!exists) {
+        verificationResults.push({ step: `File exists: ${artifact}`, passed: false, output: "File not found" });
+      } else {
+        verificationResults.push({ step: `File exists: ${artifact}`, passed: true });
+        this.stats.filesCreated++;
+      }
     }
 
-    const verificationPrompt = `Verify that milestone "${milestone.title}" was completed.
-Expected artifacts: ${JSON.stringify(milestone.artifacts)}
-Verification steps: ${JSON.stringify(milestone.verificationSteps)}
+    // If no verification steps but artifacts required, check those
+    if (milestone.verificationSteps.length === 0) {
+      const allArtifactsExist = verificationResults.every(r => r.passed);
+      this.emitEvent("verification_completed", {
+        milestone: milestone.title,
+        passed: allArtifactsExist,
+        results: verificationResults
+      });
+      return allArtifactsExist;
+    }
 
-Run the verification steps and report as JSON:
-{"passed": true/false, "summary": "Brief summary"}`;
+    // Step 2: Run verification steps through the agent
+    const verificationPrompt = `You are verifying that a milestone was completed correctly.
 
-    const response = await generateWithThinking(
-      verificationPrompt,
-      this.state.plan.thinkingStrategy.verification,
-      this.apiKey
-    );
+MILESTONE: ${milestone.title}
+DESCRIPTION: ${milestone.description}
+WORKING DIRECTORY: ${this.state.workingDirectory}
+
+ARTIFACT CHECK RESULTS:
+${artifactResults.join("\n")}
+
+VERIFICATION STEPS TO RUN:
+${milestone.verificationSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
+
+INSTRUCTIONS:
+1. For each verification step, run the appropriate command or check
+2. Use the bash tool to run tests, check file contents, or verify installations
+3. If a step involves "npm test" or similar, run it and check the output
+4. After running all checks, report the results
+
+Return your verification results as JSON at the end:
+{
+  "passed": true/false,
+  "results": [
+    {"step": "step name", "passed": true/false, "output": "brief output"}
+  ],
+  "summary": "Overall verification summary"
+}`;
 
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]);
-        return result.passed === true;
-      }
-    } catch {}
+      const response = await this.agent.chat(
+        verificationPrompt,
+        "marathon-verifier",
+        "main",
+        "main"
+      );
 
-    return milestone.artifacts.every(artifact =>
+      // Track verification stats
+      this.stats.toolCalls++;
+
+      // Try to parse JSON result
+      const jsonMatch = response.text.match(/\{[\s\S]*"passed"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const result = JSON.parse(jsonMatch[0]);
+
+          // Add results from agent verification
+          if (result.results && Array.isArray(result.results)) {
+            verificationResults.push(...result.results);
+          }
+
+          this.log(
+            result.passed ? "success" : "warn",
+            `Verification ${result.passed ? "passed" : "failed"}: ${result.summary || milestone.title}`,
+            milestone.id
+          );
+
+          this.emitEvent("verification_completed", {
+            milestone: milestone.title,
+            passed: result.passed,
+            results: verificationResults,
+            summary: result.summary,
+          });
+
+          return result.passed === true;
+        } catch (parseErr) {
+          this.log("warn", "Could not parse verification result, falling back to artifact check", milestone.id);
+        }
+      }
+
+      // Fallback: if response contains success indicators
+      const responseText = response.text.toLowerCase();
+      const hasSuccessIndicators =
+        responseText.includes("all tests passed") ||
+        responseText.includes("verification passed") ||
+        responseText.includes("successfully verified") ||
+        responseText.includes("all checks passed");
+
+      const hasFailureIndicators =
+        responseText.includes("test failed") ||
+        responseText.includes("error:") ||
+        responseText.includes("verification failed") ||
+        responseText.includes("check failed");
+
+      if (hasSuccessIndicators && !hasFailureIndicators) {
+        this.emitEvent("verification_completed", {
+          milestone: milestone.title,
+          passed: true,
+          results: verificationResults
+        });
+        return true;
+      }
+
+      if (hasFailureIndicators) {
+        this.emitEvent("verification_completed", {
+          milestone: milestone.title,
+          passed: false,
+          results: verificationResults
+        });
+        return false;
+      }
+
+    } catch (error) {
+      this.log("error", `Verification error: ${error instanceof Error ? error.message : String(error)}`, milestone.id);
+    }
+
+    // Final fallback: just check artifacts exist
+    const allArtifactsExist = milestone.artifacts.every(artifact =>
       existsSync(resolve(this.state.workingDirectory, artifact))
     );
+
+    this.emitEvent("verification_completed", {
+      milestone: milestone.title,
+      passed: allArtifactsExist,
+      results: verificationResults
+    });
+
+    return allArtifactsExist;
   }
 
   private async attemptRecovery(milestone: Milestone, error: string): Promise<void> {
@@ -850,6 +1107,23 @@ Analyze what went wrong and try a different approach.`;
   }
 
   private async notifyApprovalNeeded(request: ApprovalRequest): Promise<void> {
+    // Use enhanced approval message with interactive buttons
+    if (this.telegramChatId) {
+      await sendApprovalRequest(
+        this.telegramChatId,
+        request.id,
+        request.action,
+        request.description,
+        request.risk,
+        {
+          milestone: this.state.plan.milestones.find(m => m.status === "in_progress")?.title || "Unknown",
+          requestedAt: new Date().toLocaleTimeString(),
+        }
+      );
+      return;
+    }
+
+    // Fallback to basic notification
     const message =
       `⚠️ *Approval Required*\n\n` +
       `Action: ${request.action}\n` +
