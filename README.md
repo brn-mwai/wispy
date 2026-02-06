@@ -1,166 +1,89 @@
-# Wispy
+<p align="center">
+  <img src="assets/banner.png" alt="Wispy Banner" width="100%" />
+</p>
 
-**The World's First Autonomous AI Agent with Payments, Identity, and Multi-Day Reasoning**
+<h1 align="center">Wispy</h1>
 
-[![npm](https://img.shields.io/npm/v/wispy-ai)](https://www.npmjs.com/package/wispy-ai)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Base Sepolia](https://img.shields.io/badge/Base-Sepolia-blue)](https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7)
+<p align="center">
+  <strong>Autonomous AI Agent Infrastructure — Think for Days, Pay for Services, Prove Identity On-Chain</strong>
+</p>
 
-> **Built for:** [Google Gemini Hackathon](https://gemini3.devpost.com/) | [Chainlink Convergence](https://chain.link/hackathon) | [ETHGlobal HackMoney](https://ethglobal.com/events/hackmoney2026)
+<p align="center">
+  <a href="https://www.npmjs.com/package/wispy-ai"><img src="https://img.shields.io/npm/v/wispy-ai?style=flat-square&color=31ccff" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/wispy-ai"><img src="https://img.shields.io/npm/dm/wispy-ai?style=flat-square&color=31ccff" alt="npm downloads" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen?style=flat-square" alt="Node.js" /></a>
+  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.7-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://github.com/brn-mwai/wispy"><img src="https://img.shields.io/github/stars/brn-mwai/wispy?style=flat-square&color=yellow" alt="GitHub Stars" /></a>
+  <a href="https://github.com/brn-mwai/wispy/issues"><img src="https://img.shields.io/github/issues/brn-mwai/wispy?style=flat-square" alt="Issues" /></a>
+  <a href="https://github.com/brn-mwai/wispy/actions"><img src="https://img.shields.io/github/actions/workflow/status/brn-mwai/wispy/ci.yml?style=flat-square&label=build" alt="Build" /></a>
+  <a href="https://wispy.cc"><img src="https://img.shields.io/badge/docs-wispy.cc-31ccff?style=flat-square" alt="Docs" /></a>
+  <a href="https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7"><img src="https://img.shields.io/badge/Base-Sepolia-blue?style=flat-square&logo=ethereum" alt="Base Sepolia" /></a>
+</p>
 
----
-
-## What Makes Wispy Different
-
-**Wispy isn't just another AI chatbot.** It's the first autonomous agent infrastructure that combines:
-
-| Protocol | What It Enables |
-|----------|-----------------|
-| **Gemini 2.5 Pro** | Multi-day reasoning with 24K token thinking budget |
-| **x402 Payments** | Automatic USDC payments for premium APIs |
-| **ERC-8004 Identity** | On-chain verifiable agent registration |
-| **A2A Protocol** | Agent-to-agent discovery and communication |
-
-> *"Wispy is the first AI agent that can think for days, pay for its own services, and prove its identity on-chain."*
-
----
-
-## Live Demo
-
-**Deployed Contracts (Base Sepolia):**
-- Agent Registry: [`0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7`](https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7)
-
-**Try It:**
-```bash
-npm i -g wispy-ai
-wispy setup
-wispy agent "Research the DePIN market and produce a report"
-```
+<p align="center">
+  <a href="https://wispy.cc">Website</a> &middot;
+  <a href="https://wispy.cc/developers">API Docs</a> &middot;
+  <a href="https://www.npmjs.com/package/wispy-ai">npm</a> &middot;
+  <a href="https://github.com/brn-mwai/wispy/issues">Issues</a> &middot;
+  <a href="#quickstart">Quickstart</a>
+</p>
 
 ---
 
-## Architecture
+## What is Wispy?
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              WISPY PLATFORM                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
-│  │   Gemini     │    │     x402     │    │   ERC-8004   │                  │
-│  │  2.5 Pro     │    │   Payments   │    │   Identity   │                  │
-│  │  + Thinking  │    │  (USDC/Base) │    │  (On-Chain)  │                  │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘                  │
-│         │                   │                   │                           │
-│         └───────────────────┼───────────────────┘                           │
-│                             │                                               │
-│                    ┌────────▼────────┐                                      │
-│                    │  MARATHON AGENT │                                      │
-│                    │   Multi-Day     │                                      │
-│                    │   Autonomous    │                                      │
-│                    │   Execution     │                                      │
-│                    └────────┬────────┘                                      │
-│                             │                                               │
-│         ┌───────────────────┼───────────────────┐                           │
-│         │                   │                   │                           │
-│  ┌──────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐                     │
-│  │   A2A       │    │   Trust     │    │   Tools     │                     │
-│  │  Protocol   │    │ Controller  │    │   (27+)     │                     │
-│  │  (Google)   │    │ (Approvals) │    │             │                     │
-│  └─────────────┘    └─────────────┘    └─────────────┘                     │
-│                                                                              │
-│  Channels: Telegram | WhatsApp | Discord | Slack | REST | WebSocket        │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**Wispy is an autonomous AI agent platform** that goes beyond simple chatbots. It can run multi-day tasks independently, make payments for premium APIs, prove its identity on-chain, and communicate with other AI agents — all from a single CLI or API.
+
+Think of it as an AI engineer that can:
+
+- **Plan and execute complex projects** over hours or days (Marathon Mode)
+- **Pay for services** automatically using USDC via the x402 protocol
+- **Verify its identity** on-chain with ERC-8004 registrations
+- **Talk to other agents** using Google's A2A protocol
+- **Operate across channels** — CLI, Telegram, WhatsApp, REST API, WebSocket
+
+Wispy is powered by **Google Gemini 2.5 Pro** with configurable thinking budgets up to 24K tokens, giving it deep reasoning capabilities for complex multi-step tasks.
 
 ---
 
-## Key Features
+## Quickstart
 
-### 1. Marathon Mode — Multi-Day Autonomous Execution
+### Install
 
 ```bash
-wispy marathon "Build a full-stack e-commerce app with Next.js and Stripe"
+npm install -g wispy-ai
 ```
 
-- **Deep Planning**: Gemini 2.5 Pro with 24K token thinking budget
-- **Milestone Execution**: Autonomous step-by-step completion
-- **Self-Recovery**: Fails? It analyzes and tries a different approach
-- **Checkpointing**: Pause anytime, resume where you left off
-- **Real-time Updates**: Telegram/WhatsApp notifications on progress
+<details>
+<summary><strong>Other installation methods</strong></summary>
 
-### 2. x402 Payments — Agents That Pay
-
-```typescript
-// Agent encounters a premium API
-// HTTP 402 Payment Required
-
-// Wispy automatically:
-// 1. Checks spending budget
-// 2. Requests Trust Controller approval
-// 3. Pays with USDC on Base
-// 4. Continues execution
-
-await agent.fetch("https://api.premium.com/data"); // Just works
-```
-
-- Automatic HTTP 402 handling
-- USDC payments on Base network
-- Configurable spending limits
-- Full transaction logging
-
-### 3. ERC-8004 Identity — Verifiable Agents
-
-```json
-// /.well-known/agent.json
-{
-  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-  "name": "Wispy Agent",
-  "x402Support": true,
-  "registrations": [{
-    "agentId": "1",
-    "agentRegistry": "0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7"
-  }],
-  "supportedTrust": ["reputation"]
-}
-```
-
-- On-chain agent registration
-- Reputation system
-- Validation framework
-- Trust verification
-
-### 4. A2A Protocol — Agents Talking to Agents
-
-```typescript
-// Discover another agent
-const card = await a2a.discover("https://other-agent.com");
-
-// Send a task
-const task = await a2a.sendTask(card, {
-  message: "Analyze this dataset",
-  data: { ... }
-});
-
-// Get result
-const result = await task.waitForCompletion();
-```
-
-- Google's Agent-to-Agent protocol
-- Agent card discovery
-- Task delegation
-- Secure message signing
-
----
-
-## Quick Start
-
-### Installation
-
+**pnpm:**
 ```bash
-npm i -g wispy-ai
+pnpm add -g wispy-ai
 ```
+
+**Homebrew (macOS/Linux):**
+```bash
+brew tap brn-mwai/wispy && brew install wispy
+```
+
+**Shell script (macOS/Linux):**
+```bash
+curl -fsSL https://wispy.cc/install.sh | bash
+```
+
+**PowerShell (Windows):**
+```powershell
+irm https://wispy.cc/install.ps1 | iex
+```
+
+**CMD (Windows):**
+```cmd
+curl -o install.bat https://wispy.cc/install.bat && install.bat
+```
+
+</details>
 
 ### Setup
 
@@ -168,11 +91,7 @@ npm i -g wispy-ai
 wispy setup
 ```
 
-This will:
-1. Create Vertex AI configuration
-2. Generate blockchain wallet
-3. Configure x402 payments
-4. Set up A2A protocol
+This interactive wizard will configure your AI credentials (Gemini API key or Vertex AI), channels, and optional blockchain integrations.
 
 ### Run
 
@@ -180,14 +99,128 @@ This will:
 # Interactive chat
 wispy chat
 
-# Marathon mode
-wispy marathon "Build a React dashboard"
-
-# Full gateway (A2A server + all channels)
+# Start the full gateway (API + channels + A2A)
 wispy gateway
 
-# Agent with specific task
-wispy agent "Research and summarize the latest AI papers"
+# Run a marathon (multi-day autonomous task)
+wispy marathon "Build a full-stack SaaS dashboard with Next.js"
+
+# Execute a single agent task
+wispy agent "Research the DePIN market and produce a detailed report"
+```
+
+---
+
+## Features
+
+### Marathon Mode — Multi-Day Autonomous Execution
+
+Wispy's Marathon Mode plans complex tasks into milestones, then executes them autonomously over hours or days. It checkpoints progress, self-recovers from failures, and sends real-time updates via Telegram or WhatsApp.
+
+```bash
+wispy marathon "Build and deploy a REST API with auth, tests, and docs"
+```
+
+- Deep planning with Gemini 2.5 Pro (up to 24K token thinking budget)
+- Autonomous milestone-by-milestone execution
+- Self-recovery — analyzes failures and retries with different approaches
+- Checkpointing — pause anytime, resume exactly where you left off
+- Real-time notifications on progress via Telegram/WhatsApp
+
+### x402 Payments — Agents That Pay for Services
+
+Wispy handles HTTP 402 Payment Required responses automatically. When it encounters a premium API, it checks spending limits, requests approval through the Trust Controller, and pays with USDC on Base.
+
+- Automatic HTTP 402 handling with USDC on Base network
+- Configurable spending limits per task
+- Trust Controller approval workflows
+- Full transaction logging and audit trail
+
+### ERC-8004 Identity — Verifiable Agent Registration
+
+Register your agent on-chain using the ERC-8004 standard. This gives Wispy a verifiable, decentralized identity that other agents and services can trust.
+
+- On-chain registration on Base Sepolia
+- Reputation tracking system
+- Serves `/.well-known/agent.json` for discovery
+- Validation framework for trust verification
+
+### A2A Protocol — Agent-to-Agent Communication
+
+Wispy implements Google's Agent-to-Agent protocol for discovering, delegating tasks to, and receiving results from other AI agents.
+
+- Agent card publishing and discovery
+- Task delegation with structured messaging
+- Secure Ed25519 message signing
+- Compatible with the broader A2A ecosystem
+
+### 27+ Built-in Tools
+
+| Category | Tools |
+|----------|-------|
+| **Code** | File operations, shell execution, project scaffolding |
+| **Web** | HTTP requests, web scraping, browser automation (Playwright) |
+| **Data** | PDF/DOCX/Excel generation, CSV parsing, chart creation |
+| **Media** | Image generation (Imagen 3), image editing, voice TTS |
+| **Blockchain** | Wallet management, contract interaction, ENS resolution |
+| **Memory** | Vector embeddings, semantic search, conversation history |
+| **System** | Cron scheduling, reminders, MCP server integration |
+
+### Multi-Channel Support
+
+| Channel | Description |
+|---------|-------------|
+| **CLI** | Interactive REPL with rich formatting and voice mode |
+| **Telegram** | Full bot with inline responses and thinking indicators |
+| **WhatsApp** | Business API integration with media support |
+| **REST API** | Public API with key management for third-party integrations |
+| **WebSocket** | Real-time streaming for web applications |
+| **A2A** | Agent-to-agent protocol server on port 4002 |
+
+### Public REST API
+
+Wispy exposes a full REST API so you can integrate it into your own products. Manage API keys, set scopes and rate limits, and interact with all Wispy features programmatically.
+
+```bash
+# Create an API key
+wispy api create "My App" --scopes chat,marathon
+
+# Use it
+curl -H "Authorization: Bearer wsk_..." https://your-wispy-instance/api/v1/chat \
+  -d '{"message": "Hello"}'
+```
+
+See the full API documentation at [wispy.cc/developers](https://wispy.cc/developers).
+
+---
+
+## Architecture
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                        WISPY PLATFORM                              │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   Channels          Core Engine           Protocols                │
+│  ┌──────────┐     ┌──────────────┐     ┌──────────────┐          │
+│  │ CLI      │     │ Gemini 2.5   │     │ x402         │          │
+│  │ Telegram │────▶│ Pro Agent    │────▶│ Payments     │          │
+│  │ WhatsApp │     │ + Marathon   │     │ (USDC/Base)  │          │
+│  │ REST API │     │   Mode       │     ├──────────────┤          │
+│  │ WebSocket│     └──────┬───────┘     │ ERC-8004     │          │
+│  └──────────┘            │             │ Identity     │          │
+│                          │             ├──────────────┤          │
+│   Services               │             │ A2A Protocol │          │
+│  ┌──────────┐     ┌──────▼───────┐     │ (Google)     │          │
+│  │ Memory   │     │  27+ Tools   │     └──────────────┘          │
+│  │ Cron     │     │  + MCP       │                               │
+│  │ Skills   │     │  Servers     │     Security                  │
+│  │ Browser  │     └──────────────┘     ┌──────────────┐          │
+│  │ Voice    │                          │ Trust Ctrl   │          │
+│  └──────────┘                          │ Device Auth  │          │
+│                                        │ Rate Limits  │          │
+│                                        └──────────────┘          │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -197,50 +230,27 @@ wispy agent "Research and summarize the latest AI papers"
 ### Option 1: Gemini API Key (Simplest)
 
 ```env
-# .env or .env.local
 GEMINI_API_KEY=your-api-key
 ```
 
-Get your API key at [Google AI Studio](https://aistudio.google.com/apikey).
+Get your key at [Google AI Studio](https://aistudio.google.com/apikey).
 
-### Option 2: Vertex AI (Enterprise)
+### Option 2: Vertex AI (Production)
 
 ```env
-# .env.local
 GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1  # Optional
+GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
 Then authenticate:
+
 ```bash
 gcloud auth application-default login
 ```
 
-Or use a service account:
-```env
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-```
-
-Enable Vertex AI in the CLI:
-```bash
-wispy
-/vertex enable your-project-id
-```
-
-### Payments & Channels
-
-```env
-# x402 Payments (Coinbase CDP)
-CDP_API_KEY_ID=your-key-id
-CDP_API_KEY_SECRET=your-key-secret
-
-# Optional: Channels
-TELEGRAM_BOT_TOKEN=your-token
-```
-
 ### Full Configuration
 
-Use `~/.wispy/config.yaml`:
+Wispy uses `~/.wispy/config.yaml`:
 
 ```yaml
 agent:
@@ -248,8 +258,6 @@ agent:
   id: wispy-agent-001
 
 gemini:
-  # Option 1: API Key (set GEMINI_API_KEY env var)
-  # Option 2: Vertex AI
   vertexai:
     enabled: true
     project: your-gcp-project
@@ -261,160 +269,167 @@ gemini:
     embedding: text-embedding-004
 
 marathon:
-  thinkingLevel: ultra  # 24K token budget
-  checkpointInterval: 5  # Save every 5 milestones
+  thinkingLevel: ultra       # Thinking budget: low | medium | high | ultra
+  checkpointInterval: 5
 
-x402:
+wallet:
   enabled: true
-  maxSpendPerTask: 10.00  # USDC
-  requireApproval: true
-
-erc8004:
-  network: base-sepolia
-  autoRegister: true
-
-a2a:
-  enabled: true
-  port: 3000
+  chain: base-sepolia
 
 channels:
   telegram:
     enabled: true
+  whatsapp:
+    enabled: true
   rest:
     enabled: true
-    port: 8080
-```
+    port: 4001
+  web:
+    port: 4000
 
----
+security:
+  autonomousMode: false      # Auto-approve file/code operations
+  actionGuard:
+    enabled: true
 
-## Hackathon Tracks
-
-### Google Gemini Hackathon — Marathon Agent
-
-**Focus:** Multi-day autonomous execution with Gemini 2.5 Pro
-
-- 24K token thinking budget for complex planning
-- Thought continuity across sessions
-- Self-verification and recovery
-- Real-time monitoring dashboard
-
-### Chainlink Convergence — Trustless AI Agents
-
-**Focus:** x402 payments + ERC-8004 identity on Base
-
-- Automatic crypto payments for AI services
-- On-chain agent registration
-- Verifiable reputation system
-- Trust Controller for approvals
-
-### ETHGlobal HackMoney — Agent Economy
-
-**Focus:** Full-stack autonomous agent infrastructure
-
-- Agents that can earn and spend
-- Agent-to-agent marketplace
-- Decentralized identity
-- Production-ready SDK
-
----
-
-## Technical Specs
-
-| Component | Technology |
-|-----------|------------|
-| AI Model | Gemini 2.5 Pro via Vertex AI |
-| Thinking Budget | 128 - 24,576 tokens |
-| Blockchain | Base Sepolia (chainId: 84532) |
-| Payments | USDC via x402 protocol |
-| Identity | ERC-8004 standard |
-| Agent Comms | A2A Protocol (Google) |
-| Runtime | Node.js 20+, TypeScript |
-
----
-
-## API Reference
-
-### Marathon API
-
-```typescript
-import { startMarathon } from 'wispy-ai';
-
-const marathon = await startMarathon({
-  goal: "Build a SaaS landing page",
-  thinkingLevel: "ultra",
-  checkpointDir: "./.wispy/checkpoints"
-});
-
-marathon.on('milestone', (m) => console.log(`Completed: ${m.name}`));
-marathon.on('complete', (result) => console.log('Done!', result));
-```
-
-### x402 Fetch
-
-```typescript
-import { x402Fetch } from 'wispy-ai';
-
-// Automatically handles HTTP 402 with crypto payment
-const response = await x402Fetch("https://api.premium.com/data", {
-  maxPayment: "1.00", // USDC
-  trustController: myController
-});
-```
-
-### ERC-8004 Client
-
-```typescript
-import { ERC8004Client } from 'wispy-ai';
-
-const client = new ERC8004Client(signer, "./.wispy");
-const agentId = await client.registerAgent("https://my-agent.com/agent.json");
-const reputation = await client.getReputation(agentId);
-```
-
-### A2A Client
-
-```typescript
-import { A2AClient, createAgentCard } from 'wispy-ai';
-
-// Create your agent card
-const myCard = createAgentCard({
-  name: "My Agent",
-  skills: [{ id: "research", name: "Research" }]
-});
-
-// Discover and interact with other agents
-const client = new A2AClient("https://other-agent.com");
-const theirCard = await client.discover();
-const result = await client.sendTask({ message: "Help me research..." });
+memory:
+  heartbeatIntervalMinutes: 30
 ```
 
 ---
 
 ## Security
 
-- **Device Identity**: Ed25519 keys for authentication
-- **Encrypted Storage**: AES-256-GCM for credentials
-- **API Key Scanner**: Automatic detection and redaction
-- **Trust Controller**: Approval workflows for sensitive actions
-- **Rate Limiting**: Prevent abuse
-- **Loop Detection**: Prevents infinite action loops
+Wispy is built with security as a first-class concern:
+
+- **Device Identity** — Ed25519 keypair generated per device for authentication
+- **Encrypted Storage** — AES-256-GCM encryption for credentials and sensitive data
+- **Trust Controller** — Approval workflows for sensitive operations (file writes, payments, shell commands)
+- **Action Guard** — Configurable rules for what the agent can and cannot do autonomously
+- **API Key System** — Scoped keys with rate limiting, expiry, and usage tracking
+- **Secret Scanner** — Automatic detection and redaction of API keys in outputs
+- **Loop Detection** — Prevents infinite tool execution loops
+- **Session Isolation** — Separate contexts for different users and channels
 
 ---
 
-## Links
+## CLI Reference
 
-- **npm**: https://www.npmjs.com/package/wispy-ai
-- **GitHub**: https://github.com/brn-mwai/wispy
-- **Contract**: https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7
+```
+wispy chat              Interactive chat session
+wispy gateway           Start full gateway (API + channels + A2A)
+wispy marathon <goal>   Start autonomous multi-day task execution
+wispy agent <task>      Execute a single agent task
+wispy setup             Interactive configuration wizard
+wispy doctor            Diagnose configuration issues
+wispy skill <name>      Run a specific skill
+wispy api create        Create an API key
+wispy api list          List API keys
+wispy api revoke <id>   Revoke an API key
+wispy voice             Enter voice mode
+wispy history           View conversation history
+```
+
+---
+
+## Technical Specs
+
+| Component | Details |
+|-----------|---------|
+| **AI Engine** | Google Gemini 2.5 Pro / Flash via Vertex AI or API key |
+| **Thinking Budget** | 128 — 24,576 tokens (configurable) |
+| **Runtime** | Node.js 20+, TypeScript 5.7, ESM |
+| **Blockchain** | Base Sepolia (chainId: 84532) |
+| **Payments** | USDC via x402 protocol (Coinbase CDP) |
+| **Identity** | ERC-8004 on-chain agent registration |
+| **Agent Comms** | A2A Protocol (Google) |
+| **Tools** | 27+ built-in + MCP server support |
+| **Channels** | CLI, Telegram, WhatsApp, REST API, WebSocket, A2A |
+| **Memory** | SQLite + vector embeddings (text-embedding-004) |
+| **Browser** | Playwright-based headless automation |
+
+---
+
+## API Usage
+
+### Chat
+
+```typescript
+import { Agent } from 'wispy-ai';
+
+const agent = new Agent({ config, runtimeDir, soulDir });
+
+for await (const chunk of agent.chatStream("Build a landing page", "user-1", "api")) {
+  process.stdout.write(chunk.content);
+}
+```
+
+### Marathon
+
+```typescript
+const marathon = agent.startMarathon("Build a full-stack app with auth and tests");
+
+marathon.on('milestone', (m) => console.log(`Completed: ${m.name}`));
+marathon.on('complete', (result) => console.log('Done!', result));
+```
+
+### REST API
+
+```bash
+# Create API key
+wispy api create "My Integration" --scopes chat,chat:stream,marathon
+
+# Chat
+curl -X POST https://localhost:4001/api/v1/chat \
+  -H "Authorization: Bearer wsk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello, Wispy"}'
+
+# Stream (SSE)
+curl -N https://localhost:4001/api/v1/chat/stream \
+  -H "Authorization: Bearer wsk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Explain quantum computing"}'
+```
+
+Full API docs: [wispy.cc/developers](https://wispy.cc/developers)
+
+---
+
+## Deployed Contracts
+
+| Contract | Address | Network |
+|----------|---------|---------|
+| Agent Registry | [`0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7`](https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7) | Base Sepolia |
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/brn-mwai/wispy).
+
+```bash
+git clone https://github.com/brn-mwai/wispy.git
+cd wispy
+npm install
+npm run build
+npm run dev
+```
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 ---
 
-**The first AI agent that thinks for days, pays for services, and proves its identity on-chain.**
+<p align="center">
+  <strong>Wispy</strong> is built by <a href="https://hausorlabs.com">Hausor Labs Team (HL Team)</a>
+</p>
 
-*Built by Brian Mwai for Google Gemini Hackathon, Chainlink Convergence, and ETHGlobal HackMoney 2026*
+<p align="center">
+  <a href="https://wispy.cc">wispy.cc</a> &middot;
+  <a href="https://www.npmjs.com/package/wispy-ai">npm</a> &middot;
+  <a href="https://github.com/brn-mwai/wispy">GitHub</a>
+</p>

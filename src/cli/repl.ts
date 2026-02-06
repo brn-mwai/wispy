@@ -1,5 +1,5 @@
 /**
- * Wispy REPL — Clean CLI modeled exactly after Claude Code.
+ * Wispy REPL — Clean interactive CLI experience.
  *
  * Layout:
  *   [cloud icon]  Wispy v0.4.6

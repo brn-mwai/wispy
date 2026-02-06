@@ -7,6 +7,14 @@ dist/
 .wispy/
 *.log
 
+# Internal docs (kept locally)
+DEMO_SCRIPT.md
+HACKATHON_BATTLE_PLAN.md
+SCREENSHOTS_GUIDE.md
+STRATEGIC_TRACKS.md
+SUBMISSIONS.md
+copy-tests.ps1
+
 # Secrets / credentials
 gen-lang-client-*.json
 *.pem

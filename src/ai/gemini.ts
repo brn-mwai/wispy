@@ -270,7 +270,7 @@ function buildToolPrompt(tools: unknown[]): string {
 
   let prompt = `
 
-## 🛠️ YOU ARE AN ELITE AUTONOMOUS AGENT (Like Claude Opus 4.5)
+## 🛠️ YOU ARE AN ELITE AUTONOMOUS AGENT
 
 You have REAL tools that execute REAL actions. You can build ENTIRE applications.
 When you use a tool, IT ACTUALLY RUNS - files are created, commands execute, etc.

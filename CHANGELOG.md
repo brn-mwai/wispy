@@ -7,7 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.6.2] - 2026-01-29
+## [1.0.0] — 2026-02-06
+
+### Added
+
+#### Public REST API
+- Full REST API with 16+ endpoints for third-party integrations (`src/api/router.ts`)
+- API key management system with scoped permissions, rate limiting, and usage tracking (`src/api/keys.ts`)
+- Endpoints: `/chat`, `/chat/stream` (SSE), `/sessions`, `/memory/search`, `/marathon`, `/generate/image`, `/skills`, `/tools`, `/usage`, `/webhooks`
+- CLI commands: `wispy api create`, `wispy api list`, `wispy api revoke`, `wispy api delete`
+- API documentation page at [wispy.cc/developers](https://wispy.cc/developers)
+
+#### Cross-Platform Installers
+- Shell installer for macOS/Linux (`curl -fsSL https://wispy.cc/install.sh | bash`)
+- PowerShell installer for Windows (`irm https://wispy.cc/install.ps1 | iex`)
+- CMD batch installer for Windows (`curl -o install.bat https://wispy.cc/install.bat && install.bat`)
+- Homebrew formula (`brew tap brn-mwai/wispy && brew install wispy`)
+
+#### Marathon Mode v2 — Visual Dashboard
+- Real-time progress visualization with milestone tracking
+- Telegram inline visual updates with progress bars
+- Pause, resume, and abort controls
+- Status endpoint: `GET /api/v1/marathon/:id`
+
+### Changed
+- Replaced basic REST adapter with comprehensive public API router
+- Gateway server now mounts public API with CORS, rate limit headers, and request IDs
+- Updated homepage to `https://wispy.cc`
+- Updated postinstall documentation link
+- Complete README rewrite with comprehensive documentation
+
+### Security
+- Added `.gitignore` rules for credential files (`gen-lang-client-*.json`, `*.pem`, `*.key`)
+- API keys use SHA-256 hashing with `wsk_` prefix
+- Per-key scoped permissions: `chat`, `sessions`, `memory`, `marathon`, `skills`, `tools`, `admin`
+- Rate limiting per API key (configurable req/min)
+- Key expiry support with automatic validation
+
+---
+
+## [0.7.0] — 2026-01-30
+
+### Added
+
+#### Gemini 3 Support
+- Thinking levels: `low`, `medium`, `high`, `ultra` (128 — 24,576 tokens)
+- Thought signatures — cryptographic signing of reasoning chains
+- Thought continuity across sessions
+- Configurable thinking budget per command
+
+#### Protocol Integrations
+- **x402 Payments** — Automatic USDC payments on Base for HTTP 402 responses
+- **ERC-8004 Identity** — On-chain agent registration with reputation system
+- **A2A Protocol** — Google's Agent-to-Agent discovery and task delegation
+- **Chainlink CRE** — Chainlink Runtime Environment integration
+
+#### Wallet System
+- USDC wallet with Coinbase CDP integration
+- Configurable spending limits per task
+- Transaction logging and audit trail
+- Daemon mode for background operation
+
+#### Trust Controller
+- Approval workflows for sensitive operations
+- Configurable action guard rules
+- Autonomous mode toggle for CI/CD environments
+
+#### Voice System
+- Text-to-speech with Google Cloud TTS and gTTS
+- Voice input mode in CLI
+- Multi-provider support
+
+### Changed
+- Agent core refactored for streaming responses (`chatStream`)
+- Context compaction to prevent overflow in long conversations
+- Upgraded to Commander 12 for CLI
+
+---
+
+## [0.6.2] — 2026-01-29
 
 ### Added
 - **Web Dashboard for Marathon Monitoring**
@@ -24,32 +102,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **WhatsApp Integration via Baileys**
   - QR code pairing in terminal
   - Full Marathon command support with `!` prefix
-  - `!marathon <goal>` - Start autonomous task
-  - `!status` - Check progress
-  - `!pause` / `!resume` / `!abort` - Control execution
-  - `!list` - View all marathons
-  - `!help` - Show help
   - Real-time notifications to WhatsApp
   - Auto-pairing on first message
 
 - **Browser Control via CDP (Chrome DevTools Protocol)**
-  - `browser_navigate` - Open URLs
-  - `browser_click` - Click elements by selector
-  - `browser_type` - Fill input fields
-  - `browser_screenshot` - Capture screenshots
-  - `browser_snapshot` - Get page content + screenshot for AI analysis
-  - `browser_scroll` - Scroll pages
-  - `browser_tabs` - List open tabs
-  - `browser_new_tab` / `browser_close_tab` - Manage tabs
-  - `browser_press_key` - Send keyboard input
+  - `browser_navigate`, `browser_click`, `browser_type`, `browser_screenshot`
+  - `browser_snapshot` — Get page content + screenshot for AI analysis
+  - `browser_scroll`, `browser_tabs`, `browser_new_tab`, `browser_close_tab`, `browser_press_key`
   - Based on playwright-core for reliable automation
 
 ### Changed
-- Gateway startup now shows Dashboard URL
-- Gateway startup shows Telegram and WhatsApp status
+- Gateway startup now shows Dashboard, Telegram, and WhatsApp status
 - REST adapter now accepts runtimeDir for Marathon service access
-- Comprehensive README with all new features documented
-- Updated API health check version to 0.6.2
 
 ### Dependencies
 - Added `playwright-core` for browser automation
@@ -58,294 +122,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.6.1] - 2026-01-29
+## [0.6.1] — 2026-01-29
 
 ### Added
 - **Full Telegram Integration with Marathon Mode**
-  - `/marathon <goal>` - Start autonomous multi-day tasks from Telegram
-  - `/status` - Check marathon progress with visual milestone display
-  - `/pause` - Pause active marathon
-  - `/resume` - Resume paused marathon
-  - `/abort` - Stop marathon execution
-  - `/list` - View all marathons with progress
+  - `/marathon <goal>` — Start autonomous multi-day tasks from Telegram
+  - `/status`, `/pause`, `/resume`, `/abort`, `/list` commands
 - **Real-time Telegram Notifications**
   - Milestone completion alerts pushed to your phone
   - Failure notifications with error details
   - Marathon completion summary with artifacts list
-- **sendTelegramMessage()** export for programmatic notifications
-
-### Changed
-- Enhanced Telegram adapter with full Marathon command support
-- Updated README with Telegram integration documentation
-- Marathon executor now sends formatted notifications to Telegram/Discord/Slack
+- `sendTelegramMessage()` export for programmatic notifications
 
 ### Fixed
 - API key now properly passed to Telegram adapter for Marathon operations
 
 ---
 
-## [0.6.0] - 2026-01-29
+## [0.6.0] — 2026-01-29
 
 ### Added
-- **Marathon Agent Mode** - Autonomous multi-day task execution
+- **Marathon Agent Mode** — Autonomous multi-day task execution
   - Ultra Thinking (65,536 token budget) for complex goal planning
   - Milestone-based execution with self-verification
   - Auto-recovery on failure with different approaches
   - Thought Signatures for reasoning continuity across sessions
   - Checkpoint system for pause/resume/restore
-- **New Marathon Module** (`src/marathon/`)
-  - `types.ts` - Marathon state, milestone, and notification types
-  - `planner.ts` - Goal decomposition with Gemini ultra thinking
-  - `executor.ts` - Autonomous execution with verification loop
-  - `service.ts` - Marathon lifecycle management
-- **CLI Commands**
-  - `wispy marathon "goal"` - Start a new marathon
-  - `wispy marathon status` - Check current marathon
-  - `wispy marathon pause/resume/abort` - Control execution
-  - `wispy marathon list` - View all marathons
-- **REPL Command**
-  - `/marathon <goal>` - Start marathon from interactive REPL
-- **Thinking Levels**
-  - Added `ultra` level (65,536 tokens) for marathon planning
-  - `generateWithThinking()` function for standalone thinking calls
-
-### Changed
-- Updated package description to highlight Marathon Mode
-- Added hackathon-focused keywords (marathon, action-era, self-correcting)
-- README completely rewritten to showcase Marathon Mode as the killer feature
+- **Marathon Module** (`src/marathon/`)
+  - `types.ts`, `planner.ts`, `executor.ts`, `service.ts`
+- **CLI Commands**: `wispy marathon`, `wispy marathon status/pause/resume/abort/list`
+- **REPL Command**: `/marathon <goal>`
+- `generateWithThinking()` function for standalone thinking calls
 
 ---
 
-## [0.5.1] - 2026-01-29
+## [0.5.1] — 2026-01-29
 
 ### Fixed
-- **SQLite Migration Order** - Fixed "no such column: expires_at" error
+- **SQLite Migration Order** — Fixed "no such column: expires_at" error
   - CREATE INDEX now runs after ALTER TABLE migration
-  - Proper initialization order: create table → add column → create index
-- Database compatibility with existing installations
 
 ---
 
-## [0.5.0] - 2026-01-28
+## [0.5.0] — 2026-01-28
 
 ### Added
-- **Comprehensive Gemini Ecosystem Integration**
-  - Support for Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini Pro Image
-  - text-embedding-004 for vector memory
-  - Gemma 3 via Ollama for local inference
-- **Enhanced Token Management**
-  - Budget limits with automatic enforcement
-  - Context windowing for long conversations
-  - Cost estimation and tracking
-  - Smart model routing based on task complexity
-- **MCP Server Improvements**
-  - Better tool registration
-  - Enhanced error handling
-  - VS Code / Antigravity IDE compatibility
-
-### Changed
-- Improved model defaults (gemini-2.5-flash as default)
-- Better error messages for API failures
-- Enhanced logging throughout the system
+- Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini Pro Image support
+- text-embedding-004 for vector memory
+- Gemma 3 via Ollama for local inference
+- Token budget management with automatic enforcement
+- Context windowing for long conversations
+- Cost estimation and tracking
+- Smart model routing based on task complexity
+- MCP server improvements and VS Code compatibility
 
 ---
 
-## [0.4.3] - 2026-01-27
-
-### Changed
-- Version bump for npm publish
-- Minor stability improvements
-
----
-
-## [0.4.2] - 2026-01-27
-
-### Changed
-- **Banner Logo** - Exact 47x20 cloud ASCII art from reference
-- Pixel-perfect logo rendering in terminal
-
----
-
-## [0.4.1] - 2026-01-27
-
-### Changed
-- **Mini Cloud Banner** - Claude Code style compact banner
-- Info displayed beside logo instead of below
-- Cleaner terminal startup experience
-
----
-
-## [0.4.0] - 2026-01-27
+## [0.4.0] — 2026-01-27
 
 ### Added
-- **Rich Terminal UI**
-  - Status bar with model, tokens, cost, context percentage
-  - Enhanced input box with better cursor handling
-  - Recents panel showing recent sessions
-  - History browser with keyboard navigation
-  - Double-ESC to clear input
-  - Live token count display
-- **Skill Creation Wizard**
-  - Interactive skill builder
-  - Template generation
-  - SKILL.md file creation
+- Rich terminal UI with status bar, token count, and context percentage
+- History browser with keyboard navigation
+- Skill creation wizard with template generation
 
 ### Changed
 - Complete config generation from setup wizard
-- Model defaults improved (gemini-2.5-flash)
-- New cloud logo design
-
-### Fixed
-- Various terminal rendering issues
-- Input handling edge cases
+- New cloud logo design and compact banner
 
 ---
 
-## [0.3.0] - 2026-01-26
+## [0.3.0] — 2026-01-26
 
 ### Changed
-- **Clean Terminal UI**
-  - Removed all emojis from output
-  - Silenced verbose logs in CLI mode
-  - Minimal, professional interface
-- Better separation between log levels
+- Clean terminal UI — removed all emojis, silenced verbose logs
+- Minimal, professional interface
 
 ---
 
-## [0.2.0] - 2026-01-26
+## [0.2.0] — 2026-01-26
 
 ### Added
-- **Onboarding Wizard**
-  - Interactive first-run setup
-  - Model selection
-  - Agent configuration
-  - Integration setup
-- **Theme System**
-  - Dawn (morning warm tones)
-  - Day (bright, high contrast)
-  - Dusk (evening cool tones)
-  - Night (dark mode)
-- **Visual Enhancements**
-  - Pixel cloud logo ASCII art
-  - Weather-themed spinner phrases
-  - Colored output based on theme
-
-### Changed
-- Silenced boot logs in REPL mode for clean chat experience
-- Improved first-run experience
+- Onboarding wizard — interactive first-run setup
+- Theme system: Dawn, Day, Dusk, Night
+- Pixel cloud logo ASCII art
+- Weather-themed spinner phrases
 
 ---
 
-## [0.1.0] - 2026-01-25
+## [0.1.0] — 2026-01-25
 
 ### Added
-- **Initial Release** - Wispy v4: Autonomous AI Agent Platform
-- **Core Agent System**
-  - Multi-turn conversation with context
-  - Tool execution loop with self-correction
-  - Session management and persistence
-- **Multi-Agent System**
-  - 8 specialized agents: Coder, Researcher, Writer, DevOps, Designer, Data, Security, Planner
-  - Orchestrator for task routing
-  - Agent collaboration with chain-depth limits
-- **27+ Integrations**
-  - Google: Calendar, Gmail, Drive, Docs, Sheets, Meet, Maps, Search, YouTube
-  - Chat: Discord, Slack, WhatsApp, Telegram
-  - AI Models: OpenAI, Anthropic, Ollama
-  - Productivity: Notion, Obsidian, GitHub, Linear
-  - Music: Spotify
-  - Smart Home: Philips Hue, Home Assistant
-  - Tools: Browser, Webhooks, Weather
-  - Social: Twitter/X, Email (SMTP)
-- **Interactive CLI**
-  - 19 CLI commands
-  - 16 REPL slash commands
-  - Markdown rendering in terminal
-- **Voice Mode**
-  - Whisper STT (Speech-to-Text)
-  - Piper/espeak-ng TTS (Text-to-Speech)
-  - Hands-free interaction
-- **Memory System**
-  - Vector embeddings with SQLite storage
-  - Keyword + semantic hybrid search
-  - Long-term recall across sessions
-- **MCP Server**
-  - Model Context Protocol implementation
-  - IDE integration (VS Code, Antigravity)
-- **Agent-to-Agent (A2A)**
-  - Ed25519-signed task delegation
-  - Peer discovery and authentication
-- **x402 Wallet**
-  - USDC on Base network
-  - Encrypted key storage
-  - Payment integration
-- **Security (7 Layers)**
-  - Device identity with Ed25519 keys
-  - AES-256-GCM encryption
-  - API key regex scanner
-  - Action guards for dangerous operations
-  - Session isolation
-  - Rate limiting
-  - Audit logging
-- **Auto-Start Service**
-  - Windows Task Scheduler
-  - macOS launchd
-  - Linux systemd
-- **Two-Directory Design**
-  - `wispy/` - Soul files (version controlled)
-  - `.wispy/` - Runtime data (gitignored)
-- **Gateway Server**
-  - WebSocket for real-time communication
-  - REST API for HTTP clients
-  - A2A server for agent delegation
-
-### Technical
-- TypeScript with ES modules
-- Node.js 20+ required
-- SQLite for persistence
-- YAML configuration
-- Zod schema validation
+- **Initial Release** — Wispy: Autonomous AI Agent Platform
+- Core agent system with Gemini AI integration
+- Multi-agent system with 8 specialized agents
+- 27+ integrations (Google, Discord, Slack, GitHub, Notion, etc.)
+- Interactive CLI with 19 commands and 16 REPL slash commands
+- Voice mode with Whisper STT and TTS
+- Memory system with SQLite + vector embeddings
+- MCP server for IDE integration
+- A2A protocol with Ed25519-signed task delegation
+- x402 wallet with USDC on Base
+- 7-layer security (device identity, encryption, action guards, session isolation, rate limiting, audit logging)
+- Gateway server with WebSocket, REST, and A2A endpoints
+- Two-directory design: `wispy/` (soul files) and `.wispy/` (runtime data)
 
 ---
 
-## Version History Summary
+## Version History
 
 | Version | Date | Highlight |
 |---------|------|-----------|
+| 1.0.0 | 2026-02-06 | Public REST API, cross-platform installers, production release |
+| 0.7.0 | 2026-01-30 | Gemini 3 thinking levels, x402, ERC-8004, A2A protocols |
 | 0.6.2 | 2026-01-29 | Web Dashboard, WhatsApp, Browser Control |
 | 0.6.1 | 2026-01-29 | Full Telegram integration with Marathon |
 | 0.6.0 | 2026-01-29 | Marathon Agent Mode (autonomous multi-day tasks) |
-| 0.5.1 | 2026-01-29 | SQLite migration fix |
-| 0.5.0 | 2026-01-28 | Comprehensive Gemini ecosystem integration |
-| 0.4.x | 2026-01-27 | Rich terminal UI, skill wizard |
+| 0.5.x | 2026-01-28 | Gemini ecosystem integration, token management |
+| 0.4.0 | 2026-01-27 | Rich terminal UI, skill wizard |
 | 0.3.0 | 2026-01-26 | Clean terminal UI |
 | 0.2.0 | 2026-01-26 | Onboarding wizard, themes |
 | 0.1.0 | 2026-01-25 | Initial release |
 
 ---
 
-## Roadmap
-
-### Planned for v0.7.0
-- [ ] Web dashboard for Marathon visualization
-- [ ] Voice control for Marathon commands
-- [ ] WhatsApp integration for Marathon
-- [ ] Multi-marathon parallel execution
-
-### Planned for v0.8.0
-- [ ] Team collaboration features
-- [ ] Shared marathon workspaces
-- [ ] Cost analytics dashboard
-- [ ] Plugin system for custom agents
-
----
-
 ## Links
 
-- **npm**: https://www.npmjs.com/package/wispy-ai
-- **GitHub**: https://github.com/brn-mwai/wispy
-- **Issues**: https://github.com/brn-mwai/wispy/issues
-
----
-
-Built for the **Google Gemini 3 Hackathon** - showcasing the "Action Era" of autonomous AI agents.
+- **Website**: [wispy.cc](https://wispy.cc)
+- **npm**: [npmjs.com/package/wispy-ai](https://www.npmjs.com/package/wispy-ai)
+- **GitHub**: [github.com/brn-mwai/wispy](https://github.com/brn-mwai/wispy)
+- **Issues**: [github.com/brn-mwai/wispy/issues](https://github.com/brn-mwai/wispy/issues)
