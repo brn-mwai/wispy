@@ -1174,6 +1174,95 @@ program
     }
   });
 
+// === API KEY MANAGEMENT ===
+const api = program
+  .command("api")
+  .description("Manage API keys for third-party integrations");
+
+api
+  .command("create")
+  .description("Create a new API key")
+  .requiredOption("--name <name>", "Key name / label")
+  .option("--scopes <scopes>", "Comma-separated scopes (chat,marathon,admin,...)", "chat,chat:stream")
+  .option("--rate-limit <n>", "Requests per minute", "60")
+  .option("--expires <days>", "Expires in N days (default: never)")
+  .action(async (opts) => {
+    const { ApiKeyManager } = await import("../api/keys.js");
+    type Scope = "chat" | "chat:stream" | "sessions" | "memory" | "marathon" | "marathon:read" | "skills" | "generate" | "tools" | "admin" | "*";
+    const manager = new ApiKeyManager(RUNTIME_DIR);
+    const scopes = opts.scopes.split(",").map((s: string) => s.trim()) as Scope[];
+    const result = manager.create(opts.name, scopes, {
+      rateLimit: parseInt(opts.rateLimit),
+      expiresInDays: opts.expires ? parseInt(opts.expires) : undefined,
+    });
+
+    console.log("\n  \x1b[32m✓\x1b[0m API key created!\n");
+    console.log("  \x1b[1mKey:\x1b[0m   \x1b[36m" + result.key + "\x1b[0m");
+    console.log("  \x1b[1mID:\x1b[0m    " + result.record.id);
+    console.log("  \x1b[1mName:\x1b[0m  " + result.record.name);
+    console.log("  \x1b[1mScope:\x1b[0m " + result.record.scopes.join(", "));
+    console.log("  \x1b[1mRate:\x1b[0m  " + result.record.rateLimit + " req/min");
+    if (result.record.expiresAt) {
+      console.log("  \x1b[1mExp:\x1b[0m   " + result.record.expiresAt);
+    }
+    console.log("\n  \x1b[33m⚠ Save this key — it cannot be shown again.\x1b[0m\n");
+    console.log("  \x1b[2mUsage:\x1b[0m");
+    console.log("  \x1b[2mcurl -H \"Authorization: Bearer " + result.key + "\" \\\x1b[0m");
+    console.log("  \x1b[2m     -d '{\"message\": \"Hello\"}' \\\x1b[0m");
+    console.log("  \x1b[2m     http://localhost:4001/api/v1/chat\x1b[0m\n");
+  });
+
+api
+  .command("list")
+  .description("List all API keys")
+  .action(async () => {
+    const { ApiKeyManager } = await import("../api/keys.js");
+    const manager = new ApiKeyManager(RUNTIME_DIR);
+    const keys = manager.list();
+
+    if (keys.length === 0) {
+      console.log("\n  No API keys. Create one with: wispy api create --name \"My App\"\n");
+      return;
+    }
+
+    console.log(`\n  ${keys.length} API key(s):\n`);
+    for (const k of keys) {
+      const status = k.active ? "\x1b[32m●\x1b[0m" : "\x1b[31m○\x1b[0m";
+      console.log(`  ${status} ${k.id}  ${k.name}`);
+      console.log(`    Scopes: ${k.scopes.join(", ")} | Rate: ${k.rateLimit}/min | Requests: ${k.usage.totalRequests}`);
+      if (k.lastUsedAt) console.log(`    Last used: ${k.lastUsedAt}`);
+    }
+    console.log();
+  });
+
+api
+  .command("revoke")
+  .description("Revoke an API key")
+  .argument("<id>", "Key ID (e.g., wsk_xxxxxxxx)")
+  .action(async (id) => {
+    const { ApiKeyManager } = await import("../api/keys.js");
+    const manager = new ApiKeyManager(RUNTIME_DIR);
+    if (manager.revoke(id)) {
+      console.log(`\n  \x1b[32m✓\x1b[0m Revoked API key: ${id}\n`);
+    } else {
+      console.log(`\n  \x1b[31m✗\x1b[0m Key not found: ${id}\n`);
+    }
+  });
+
+api
+  .command("delete")
+  .description("Permanently delete an API key")
+  .argument("<id>", "Key ID")
+  .action(async (id) => {
+    const { ApiKeyManager } = await import("../api/keys.js");
+    const manager = new ApiKeyManager(RUNTIME_DIR);
+    if (manager.delete(id)) {
+      console.log(`\n  \x1b[32m✓\x1b[0m Deleted API key: ${id}\n`);
+    } else {
+      console.log(`\n  \x1b[31m✗\x1b[0m Key not found: ${id}\n`);
+    }
+  });
+
 // === INTERACTIVE REPL (default) ===
 program
   .command("chat", { isDefault: true })

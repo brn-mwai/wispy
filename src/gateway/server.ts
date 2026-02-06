@@ -219,11 +219,23 @@ export async function startGateway(opts: GatewayOpts) {
     }
   });
 
-  // Start REST API with Dashboard
-  const restPort = config.channels.rest?.port || 4001;
+  // Start Public API (replaces basic REST adapter)
+  const apiPort = config.channels.rest?.port || 4001;
   if (config.channels.rest?.enabled !== false) {
-    const { startRestApi } = await import("../channels/rest/adapter.js");
-    startRestApi(restPort, agent, config, runtimeDir);
+    const { createPublicApi } = await import("../api/router.js");
+    const apiApp = createPublicApi(agent, config, runtimeDir, apiKeyInstance);
+
+    // Mount legacy dashboard on the public API
+    try {
+      const { MarathonService } = await import("../marathon/service.js");
+      const { createDashboardRouter } = await import("../web/dashboard.js");
+      const marathonService = new MarathonService(runtimeDir);
+      apiApp.use("/dashboard", createDashboardRouter(marathonService));
+    } catch { /* dashboard optional */ }
+
+    apiApp.listen(apiPort, () => {
+      log.info("Public API listening on port %d", apiPort);
+    });
   }
 
   // Start Telegram (with apiKeyInstance for Marathon support - includes Vertex AI marker)
@@ -257,8 +269,8 @@ export async function startGateway(opts: GatewayOpts) {
   Agent:      ${config.agent.name}
   AI Backend: ${aiBackend}
   WebSocket:  ws://localhost:${wsPort}
-  REST API:   http://localhost:${restPort}
-  Dashboard:  http://localhost:${restPort}/dashboard
+  API:        http://localhost:${apiPort}/api/v1
+  Dashboard:  http://localhost:${apiPort}/dashboard
   A2A:        http://localhost:${a2aPort}/a2a/card
   Skills:     ${skills.length} loaded
   MCP:        ${mcpStatus.length} server(s)
