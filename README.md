@@ -17,13 +17,14 @@
   <a href="https://github.com/brn-mwai/wispy"><img src="https://img.shields.io/github/stars/brn-mwai/wispy?style=flat-square&color=yellow" alt="GitHub Stars" /></a>
   <a href="https://github.com/brn-mwai/wispy/issues"><img src="https://img.shields.io/github/issues/brn-mwai/wispy?style=flat-square" alt="Issues" /></a>
   <a href="https://github.com/brn-mwai/wispy/actions"><img src="https://img.shields.io/github/actions/workflow/status/brn-mwai/wispy/ci.yml?style=flat-square&label=build" alt="Build" /></a>
-  <a href="https://wispy.cc"><img src="https://img.shields.io/badge/docs-wispy.cc-31ccff?style=flat-square" alt="Docs" /></a>
+  <a href="https://docs.wispy.cc"><img src="https://img.shields.io/badge/docs-docs.wispy.cc-31ccff?style=flat-square" alt="Docs" /></a>
   <a href="https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7"><img src="https://img.shields.io/badge/Base-Sepolia-blue?style=flat-square&logo=ethereum" alt="Base Sepolia" /></a>
 </p>
 
 <p align="center">
   <a href="https://wispy.cc">Website</a> &middot;
-  <a href="https://wispy.cc/developers">API Docs</a> &middot;
+  <a href="https://docs.wispy.cc">Docs</a> &middot;
+  <a href="https://docs.wispy.cc/developers">API Docs</a> &middot;
   <a href="https://www.npmjs.com/package/wispy-ai">npm</a> &middot;
   <a href="https://github.com/brn-mwai/wispy/issues">Issues</a> &middot;
   <a href="#quickstart">Quickstart</a>
@@ -202,7 +203,7 @@ curl -H "Authorization: Bearer wsk_..." https://your-wispy-instance/api/v1/chat 
   -d '{"message": "Hello"}'
 ```
 
-See the full API documentation at [wispy.cc/developers](https://wispy.cc/developers).
+See the full API documentation at [docs.wispy.cc/developers](https://docs.wispy.cc/developers).
 
 ---
 
@@ -408,7 +409,7 @@ curl -N https://localhost:4001/api/v1/chat/stream \
   -d '{"message": "Explain quantum computing"}'
 ```
 
-Full API docs: [wispy.cc/developers](https://wispy.cc/developers)
+Full API docs: [docs.wispy.cc/developers](https://docs.wispy.cc/developers)
 
 ---
 
@@ -417,6 +418,21 @@ Full API docs: [wispy.cc/developers](https://wispy.cc/developers)
 | Contract | Address | Network |
 |----------|---------|---------|
 | Agent Registry | [`0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7`](https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7) | Base Sepolia |
+
+---
+
+## Documentation
+
+Full documentation is available at **[docs.wispy.cc](https://docs.wispy.cc)**:
+
+- [Getting Started](https://docs.wispy.cc/getting-started) — Installation, setup, first chat
+- [Marathon Mode](https://docs.wispy.cc/marathon) — Multi-day autonomous task execution
+- [Agentic Commerce](https://docs.wispy.cc/commerce) — Wallet, payments, commerce policies
+- [API Reference](https://docs.wispy.cc/developers) — REST API, WebSocket, authentication
+- [Channels](https://docs.wispy.cc/channels) — Telegram, WhatsApp, CLI, REST
+- [Tools](https://docs.wispy.cc/tools) — Built-in tools, MCP servers, custom skills
+- [Security](https://docs.wispy.cc/security) — Trust controller, device auth, action guard
+- [Configuration](https://docs.wispy.cc/config) — Full config reference
 
 ---
 
@@ -446,6 +462,7 @@ npm run dev
 
 <p align="center">
   <a href="https://wispy.cc">wispy.cc</a> &middot;
+  <a href="https://docs.wispy.cc">docs</a> &middot;
   <a href="https://www.npmjs.com/package/wispy-ai">npm</a> &middot;
   <a href="https://github.com/brn-mwai/wispy">GitHub</a>
 </p>
