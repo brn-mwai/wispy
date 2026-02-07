@@ -127,14 +127,26 @@ wispy marathon "Build and deploy a REST API with auth, tests, and docs"
 - Checkpointing — pause anytime, resume exactly where you left off
 - Real-time notifications on progress via Telegram/WhatsApp
 
-### x402 Payments — Agents That Pay for Services
+### Agentic Commerce — Autonomous Payments with Spending Controls
 
-Wispy handles HTTP 402 Payment Required responses automatically. When it encounters a premium API, it checks spending limits, requests approval through the Trust Controller, and pays with USDC on Base.
+Wispy handles payments autonomously with a full commerce policy engine. It can pay for premium APIs (x402), send USDC transfers, and manage its own wallet — all with configurable guardrails.
 
-- Automatic HTTP 402 handling with USDC on Base network
-- Configurable spending limits per task
-- Trust Controller approval workflows
-- Full transaction logging and audit trail
+- **Real USDC transfers** on Base via the `wallet_pay` tool
+- **Commerce policy engine** — per-transaction limits, daily spending caps, auto-approve thresholds
+- **Recipient controls** — whitelist trusted addresses, blacklist known-bad ones
+- **MetaMask interop** — export/import private keys to manage your agent's wallet from MetaMask
+- **Automatic HTTP 402 handling** — detects payment-required APIs and pays with USDC
+- **Full audit trail** — transaction logging, daily ledger, spending summaries
+
+```bash
+# Wallet management
+/wallet                  # Show address, balance, spending summary
+/wallet export           # Export private key for MetaMask
+/wallet import <key>     # Import a MetaMask wallet
+/wallet fund             # Show funding instructions
+/wallet commerce         # View commerce policy & daily spending
+/wallet commerce set dailyLimit 50   # Update spending limits
+```
 
 ### ERC-8004 Identity — Verifiable Agent Registration
 
@@ -275,6 +287,10 @@ marathon:
 wallet:
   enabled: true
   chain: base-sepolia
+  commerce:
+    maxPerTransaction: 1.0
+    dailyLimit: 10.0
+    autoApproveBelow: 0.10
 
 channels:
   telegram:
@@ -340,7 +356,7 @@ wispy history           View conversation history
 | **Thinking Budget** | 128 — 24,576 tokens (configurable) |
 | **Runtime** | Node.js 20+, TypeScript 5.7, ESM |
 | **Blockchain** | Base Sepolia (chainId: 84532) |
-| **Payments** | USDC via x402 protocol (Coinbase CDP) |
+| **Payments** | USDC on Base via x402 protocol + commerce policy engine |
 | **Identity** | ERC-8004 on-chain agent registration |
 | **Agent Comms** | A2A Protocol (Google) |
 | **Tools** | 27+ built-in + MCP server support |
