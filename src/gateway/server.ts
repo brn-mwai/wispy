@@ -118,6 +118,11 @@ export async function startGateway(opts: GatewayOpts) {
   if (config.wallet?.enabled) {
     const walletInfo = initWallet(runtimeDir, identity, config.wallet.chain);
     log.info("Wallet: %s on %s", walletInfo.address, walletInfo.chain);
+
+    // Init commerce engine with config-based policy
+    const { initCommerceEngine } = await import("../wallet/commerce.js");
+    initCommerceEngine(runtimeDir, config.wallet.commerce);
+    log.info("Commerce engine initialized");
   }
 
   // Init browser (headless Playwright for web automation)

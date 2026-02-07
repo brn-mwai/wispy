@@ -362,9 +362,139 @@ const commands: SlashCommand[] = [
   },
   {
     name: "wallet",
-    description: "Wallet status",
-    handler: async (_args, ctx) => {
-      const { getWalletAddress, getBalance } = await import("../wallet/x402.js");
+    description: "Wallet management [export|import|commerce|fund]",
+    handler: async (args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const { getWalletAddress, getBalance, exportWalletPrivateKey, importWalletFromKey } = await import("../wallet/x402.js");
+      const { getCommerceEngine } = await import("../wallet/commerce.js");
+      const { loadOrCreateIdentity } = await import("../security/device-identity.js");
+
+      const parts = args.trim().split(/\s+/);
+      const subcommand = parts[0]?.toLowerCase();
+
+      // /wallet export — show private key for MetaMask
+      if (subcommand === "export") {
+        const addr = getWalletAddress(ctx.runtimeDir);
+        if (!addr) { console.log(t.dim("\nWallet not initialized.\n")); return; }
+
+        console.log(chalk.bold.yellow("\n  WARNING: Your private key will be displayed."));
+        console.log(chalk.yellow("  Anyone with this key has full control of your wallet."));
+        console.log(chalk.yellow("  Never share it. Never paste it in public.\n"));
+
+        const identity = loadOrCreateIdentity(ctx.runtimeDir);
+        const privateKey = exportWalletPrivateKey(ctx.runtimeDir, identity);
+
+        console.log(chalk.bold("  Address:     ") + addr);
+        console.log(chalk.bold("  Private Key: ") + chalk.dim(privateKey));
+        console.log();
+        console.log(chalk.dim("  To import into MetaMask:"));
+        console.log(chalk.dim("  1. Open MetaMask -> Account menu -> Import Account"));
+        console.log(chalk.dim("  2. Select 'Private Key' and paste the key above"));
+        console.log(chalk.dim("  3. Add Base network (Chain ID: 8453, RPC: https://mainnet.base.org)\n"));
+        return;
+      }
+
+      // /wallet import <key> — import from MetaMask
+      if (subcommand === "import") {
+        const key = parts[1];
+        if (!key) {
+          console.log(chalk.red("\n  Usage: /wallet import <private-key-hex>\n"));
+          return;
+        }
+
+        try {
+          const identity = loadOrCreateIdentity(ctx.runtimeDir);
+          const info = importWalletFromKey(ctx.runtimeDir, identity, key);
+          console.log(chalk.green(`\n  Wallet imported successfully!`));
+          console.log(`  Address: ${chalk.cyan(info.address)}`);
+          console.log(`  Chain:   ${info.chain}\n`);
+        } catch (err: any) {
+          console.log(chalk.red(`\n  Import failed: ${err.message}\n`));
+        }
+        return;
+      }
+
+      // /wallet commerce [set <param> <value>] — commerce policy
+      if (subcommand === "commerce") {
+        const commerce = getCommerceEngine();
+        if (!commerce) {
+          console.log(t.dim("\n  Commerce engine not initialized (enable wallet in config).\n"));
+          return;
+        }
+
+        // /wallet commerce set <param> <value>
+        if (parts[1]?.toLowerCase() === "set" && parts[2]) {
+          const param = parts[2];
+          const value = parts[3];
+          if (!value) {
+            console.log(chalk.red(`\n  Usage: /wallet commerce set <param> <value>`));
+            console.log(chalk.dim("  Params: maxPerTransaction, dailyLimit, autoApproveBelow, requireApprovalAbove\n"));
+            return;
+          }
+
+          const numericParams = ["maxPerTransaction", "dailyLimit", "autoApproveBelow", "requireApprovalAbove"];
+          if (numericParams.includes(param)) {
+            commerce.updatePolicy({ [param]: parseFloat(value) });
+            console.log(chalk.green(`\n  Updated ${param} = ${value}\n`));
+          } else if (param === "whitelist") {
+            const policy = commerce.getPolicy();
+            policy.whitelistedRecipients.push(value);
+            commerce.updatePolicy({ whitelistedRecipients: policy.whitelistedRecipients });
+            console.log(chalk.green(`\n  Added ${value.slice(0, 10)}... to whitelist\n`));
+          } else if (param === "blacklist") {
+            const policy = commerce.getPolicy();
+            policy.blacklistedRecipients.push(value);
+            commerce.updatePolicy({ blacklistedRecipients: policy.blacklistedRecipients });
+            console.log(chalk.green(`\n  Added ${value.slice(0, 10)}... to blacklist\n`));
+          } else {
+            console.log(chalk.red(`\n  Unknown parameter: ${param}\n`));
+          }
+          return;
+        }
+
+        // Show commerce status
+        const status = commerce.getStatus();
+        console.log(chalk.bold("\n  Commerce Policy\n"));
+        console.log(`  Max per tx:       ${chalk.cyan("$" + status.policy.maxPerTransaction)}`);
+        console.log(`  Daily limit:      ${chalk.cyan("$" + status.policy.dailyLimit)}`);
+        console.log(`  Auto-approve:     ${chalk.green("< $" + status.policy.autoApproveBelow)}`);
+        console.log(`  Require approval: ${chalk.yellow("> $" + status.policy.requireApprovalAbove)}`);
+        console.log(`  Whitelisted:      ${status.policy.whitelistedRecipients.length} addresses`);
+        console.log(`  Blacklisted:      ${status.policy.blacklistedRecipients.length} addresses`);
+        console.log();
+        console.log(chalk.bold("  Today's Spending"));
+        console.log(`  Total:     ${chalk.cyan("$" + status.dailySpending.total.toFixed(2))}`);
+        console.log(`  Count:     ${status.dailySpending.count} payments`);
+        console.log(`  Remaining: ${chalk.green("$" + status.dailySpending.remaining.toFixed(2))}`);
+
+        if (status.recentPayments.length > 0) {
+          console.log();
+          console.log(chalk.bold("  Recent Payments"));
+          for (const p of status.recentPayments) {
+            console.log(`  $${p.amount} -> ${p.to.slice(0, 10)}... ${chalk.dim(p.txHash.slice(0, 14) + "...")}`);
+          }
+        }
+        console.log();
+        return;
+      }
+
+      // /wallet fund — show address for funding
+      if (subcommand === "fund") {
+        const addr = getWalletAddress(ctx.runtimeDir);
+        if (!addr) { console.log(t.dim("\nWallet not initialized.\n")); return; }
+
+        console.log(chalk.bold("\n  Fund Your Wispy Wallet\n"));
+        console.log(`  Address: ${chalk.cyan(addr)}`);
+        console.log(`  Network: Base (Chain ID 8453)`);
+        console.log();
+        console.log(chalk.dim("  From MetaMask:"));
+        console.log(chalk.dim("  1. Switch to Base network"));
+        console.log(chalk.dim("  2. Send USDC to the address above"));
+        console.log(chalk.dim("  3. Send a small amount of ETH for gas (~$0.10)\n"));
+        return;
+      }
+
+      // Default: /wallet — show status
       const addr = getWalletAddress(ctx.runtimeDir);
       if (!addr) { console.log(t.dim("\nWallet not initialized.\n")); return; }
       console.log(t.bold("\nWallet:\n"));
@@ -375,7 +505,16 @@ const commands: SlashCommand[] = [
       } catch {
         console.log(`  USDC:    ${t.dim("unavailable")}`);
       }
+
+      // Show commerce summary if available
+      const commerce = getCommerceEngine();
+      if (commerce) {
+        const spending = commerce.getDailySpending();
+        console.log(`  Today:   $${spending.total.toFixed(2)} spent ($${spending.remaining.toFixed(2)} remaining)`);
+      }
+
       console.log();
+      console.log(t.dim("  Subcommands: /wallet export | import | commerce | fund\n"));
     },
   },
   {

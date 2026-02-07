@@ -351,14 +351,22 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   },
   {
     name: "wallet_pay",
-    description: "Send USDC payment. Requires approval.",
+    description: "Execute a real USDC transfer on Base. Subject to commerce policy (spending limits, recipient controls). Small amounts may auto-approve; larger amounts require human approval.",
     parameters: {
       type: "object",
       properties: {
-        to: { type: "string", description: "Recipient wallet address" },
-        amount: { type: "string", description: "Amount in USDC" },
+        to: { type: "string", description: "Recipient wallet address (0x...)" },
+        amount: { type: "string", description: "Amount in USDC (e.g. '0.50')" },
       },
       required: ["to", "amount"],
+    },
+  },
+  {
+    name: "commerce_status",
+    description: "Check commerce policy, spending limits, and today's payment activity.",
+    parameters: {
+      type: "object",
+      properties: {},
     },
   },
   // === Browser Control (Gemini 3 Computer Use) ===

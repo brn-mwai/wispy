@@ -198,6 +198,8 @@ export class ToolExecutor {
           return this.executeWalletBalance(tool.args);
         case "wallet_pay":
           return this.executeWalletPay(tool.args);
+        case "commerce_status":
+          return this.executeCommerceStatus();
         case "list_directory":
           return this.executeListDirectory(tool.args);
         case "create_folder":
@@ -1155,10 +1157,76 @@ export class ToolExecutor {
     const amount = String(args.amount || "");
     if (!to || !amount) return { success: false, output: "", error: "to and amount required" };
 
+    // Get X402 client
+    const { getX402Client } = await import("../wallet/x402-client.js");
+    const client = getX402Client();
+    if (!client) return { success: false, output: "", error: "Wallet not initialized. Run /wallet first." };
+
+    // Check commerce policy
+    const { getCommerceEngine } = await import("../wallet/commerce.js");
+    const commerce = getCommerceEngine();
+    if (commerce) {
+      const check = await commerce.checkPayment(to, parseFloat(amount));
+      if (!check.allowed) return { success: false, output: "", error: `Payment blocked: ${check.reason}` };
+
+      // Auto-approve if policy says so
+      if (!check.requiresApproval) {
+        const result = await client.executePayment({
+          amount, currency: "USDC", recipient: to, network: "base",
+        });
+        if (result.success) commerce.recordPayment(to, parseFloat(amount), result.txHash!);
+        return result.success
+          ? { success: true, output: `Sent ${amount} USDC to ${to}\nTx: ${result.txHash}` }
+          : { success: false, output: "", error: result.error || "Transaction failed" };
+      }
+    }
+
+    // Request trust approval for amounts above auto-approve threshold
     const approved = await requestApproval("wallet_pay", `Send ${amount} USDC to ${to}`, args);
     if (!approved) return { success: false, output: "", error: "Payment not approved" };
 
-    return { success: true, output: `Payment of ${amount} USDC to ${to} initiated` };
+    // Execute on-chain transfer
+    const result = await client.executePayment({
+      amount, currency: "USDC", recipient: to, network: "base",
+    });
+
+    if (result.success && commerce) {
+      commerce.recordPayment(to, parseFloat(amount), result.txHash!);
+    }
+
+    return result.success
+      ? { success: true, output: `Sent ${amount} USDC to ${to}\nTx: ${result.txHash}` }
+      : { success: false, output: "", error: result.error || "Transaction failed" };
+  }
+
+  private async executeCommerceStatus(): Promise<ToolResult> {
+    const { getCommerceEngine } = await import("../wallet/commerce.js");
+    const commerce = getCommerceEngine();
+    if (!commerce) return { success: false, output: "", error: "Commerce engine not initialized" };
+
+    const status = commerce.getStatus();
+    const lines = [
+      "Commerce Policy:",
+      `  Max per tx:     $${status.policy.maxPerTransaction}`,
+      `  Daily limit:    $${status.policy.dailyLimit}`,
+      `  Auto-approve:   < $${status.policy.autoApproveBelow}`,
+      `  Whitelisted:    ${status.policy.whitelistedRecipients.length} addresses`,
+      `  Blacklisted:    ${status.policy.blacklistedRecipients.length} addresses`,
+      "",
+      "Today's Spending:",
+      `  Total:     $${status.dailySpending.total.toFixed(2)}`,
+      `  Count:     ${status.dailySpending.count} payments`,
+      `  Remaining: $${status.dailySpending.remaining.toFixed(2)}`,
+    ];
+
+    if (status.recentPayments.length > 0) {
+      lines.push("", "Recent Payments:");
+      for (const p of status.recentPayments) {
+        lines.push(`  $${p.amount} -> ${p.to.slice(0, 10)}... (${p.txHash.slice(0, 14)}...)`);
+      }
+    }
+
+    return { success: true, output: lines.join("\n") };
   }
 
   private executeListDirectory(args: Record<string, unknown>): ToolResult {

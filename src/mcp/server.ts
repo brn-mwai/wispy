@@ -339,6 +339,44 @@ export async function startMcpServer(rootDir: string) {
     }
   );
 
+  server.tool(
+    "wispy_wallet_export_address",
+    "Get the Wispy wallet address (for funding from MetaMask or other wallets)",
+    {},
+    async () => {
+      try {
+        const { getWalletAddress } = await import("../wallet/x402.js");
+        const addr = getWalletAddress(runtimeDir);
+        if (!addr) return { content: [{ type: "text" as const, text: "Wallet not initialized" }] };
+        return { content: [{ type: "text" as const, text: `Address: ${addr}\nNetwork: Base (Chain ID 8453)\nRPC: https://mainnet.base.org` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "wispy_commerce_status",
+    "Check commerce policy, spending limits, and today's payment activity",
+    {},
+    async () => {
+      try {
+        const { getCommerceEngine } = await import("../wallet/commerce.js");
+        const commerce = getCommerceEngine();
+        if (!commerce) return { content: [{ type: "text" as const, text: "Commerce engine not initialized" }] };
+        const status = commerce.getStatus();
+        const text = [
+          `Policy: max/tx=$${status.policy.maxPerTransaction} daily=$${status.policy.dailyLimit} auto<$${status.policy.autoApproveBelow}`,
+          `Today: $${status.dailySpending.total.toFixed(2)} spent (${status.dailySpending.count} txs), $${status.dailySpending.remaining.toFixed(2)} remaining`,
+          `Whitelist: ${status.policy.whitelistedRecipients.length} | Blacklist: ${status.policy.blacklistedRecipients.length}`,
+        ].join("\n");
+        return { content: [{ type: "text" as const, text }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
   // ═══ Marathon Tools ═══════════════════════════════════════════
 
   server.tool(

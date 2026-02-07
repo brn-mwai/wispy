@@ -96,3 +96,49 @@ export function logTransaction(
   txs.push({ ...tx, timestamp: new Date().toISOString() });
   writeJSON(txPath, txs);
 }
+
+/**
+ * Export the wallet's private key for MetaMask import.
+ * Returns the raw hex private key (0x-prefixed).
+ */
+export function exportWalletPrivateKey(
+  runtimeDir: string,
+  identity: DeviceIdentity
+): string {
+  const state = readJSON<WalletState>(getWalletPath(runtimeDir));
+  if (!state) throw new Error("Wallet not initialized");
+
+  const privateKey = decryptCredential(identity, state.encryptedKey);
+  log.warn("Private key exported for address %s — keep it safe!", state.info.address);
+  return privateKey;
+}
+
+/**
+ * Import a wallet from a private key (e.g. exported from MetaMask).
+ * Overwrites the existing wallet.
+ */
+export function importWalletFromKey(
+  runtimeDir: string,
+  identity: DeviceIdentity,
+  privateKeyHex: string,
+  chain: string = "base"
+): WalletInfo {
+  const walletPath = getWalletPath(runtimeDir);
+  ensureDir(resolve(runtimeDir, "wallet"));
+
+  // Normalize key — add 0x prefix if missing
+  const key = privateKeyHex.startsWith("0x") ? privateKeyHex : `0x${privateKeyHex}`;
+  const wallet = new ethers.Wallet(key);
+  const encryptedKey = encryptCredential(identity, wallet.privateKey);
+
+  const info: WalletInfo = {
+    address: wallet.address,
+    chain,
+    createdAt: new Date().toISOString(),
+  };
+
+  const state: WalletState = { info, encryptedKey };
+  writeJSON(walletPath, state);
+  log.info("Wallet imported: %s on %s", wallet.address, chain);
+  return info;
+}

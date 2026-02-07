@@ -62,6 +62,14 @@ export interface WispyConfig {
     enabled: boolean;
     chain: string;
     autoPayThreshold: number;
+    commerce?: {
+      maxPerTransaction?: number;
+      dailyLimit?: number;
+      autoApproveBelow?: number;
+      requireApprovalAbove?: number;
+      whitelistedRecipients?: string[];
+      blacklistedRecipients?: string[];
+    };
   };
   security: {
     requireApprovalForExternal: boolean;
@@ -342,6 +350,18 @@ const configSchema = {
         enabled: { type: "boolean" },
         chain: { type: "string" },
         autoPayThreshold: { type: "number" },
+        commerce: {
+          type: "object",
+          nullable: true,
+          properties: {
+            maxPerTransaction: { type: "number", nullable: true },
+            dailyLimit: { type: "number", nullable: true },
+            autoApproveBelow: { type: "number", nullable: true },
+            requireApprovalAbove: { type: "number", nullable: true },
+            whitelistedRecipients: { type: "array", nullable: true, items: { type: "string" } },
+            blacklistedRecipients: { type: "array", nullable: true, items: { type: "string" } },
+          },
+        },
       },
     },
     security: {
