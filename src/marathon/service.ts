@@ -21,17 +21,36 @@ import { MarathonExecutor } from "./executor.js";
 import { DurableMarathonExecutor } from "./durable-executor.js";
 import { MarathonWatchdog, getWatchdog } from "./watchdog.js";
 
+export type MarathonEventListener = (event: any) => void;
+
 export class MarathonService {
   private runtimeDir: string;
   private marathonDir: string;
   private activeExecutor: MarathonExecutor | null = null;
   private durableExecutor: DurableMarathonExecutor | null = null;
   private watchdog: MarathonWatchdog | null = null;
+  private eventListeners: MarathonEventListener[] = [];
 
   constructor(runtimeDir: string) {
     this.runtimeDir = runtimeDir;
     this.marathonDir = resolve(runtimeDir, "marathon");
     this.ensureDir(this.marathonDir);
+  }
+
+  /**
+   * Subscribe to marathon events (for CLI renderer, Telegram sync, etc.)
+   */
+  onEvent(listener: MarathonEventListener): () => void {
+    this.eventListeners.push(listener);
+    return () => {
+      this.eventListeners = this.eventListeners.filter(l => l !== listener);
+    };
+  }
+
+  private emitEvent(event: any): void {
+    for (const listener of this.eventListeners) {
+      try { listener(event); } catch {}
+    }
   }
 
   /**
@@ -173,8 +192,9 @@ export class MarathonService {
       this.durableExecutor.setTelegramBot(null, options.streaming.telegram);
     }
 
-    // Set up event listeners
+    // Set up event listeners - broadcast to all subscribers
     this.durableExecutor.on("event", (event) => {
+      this.emitEvent(event);
       if (event.type === "approval_needed") {
         console.log("\n⚠️  Approval needed! Check your Telegram or run: wispy marathon approvals\n");
       }

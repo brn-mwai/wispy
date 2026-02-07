@@ -1,19 +1,21 @@
 import chalk from "chalk";
 
-const sky = chalk.rgb(77, 209, 249);
-const skyBold = chalk.rgb(77, 209, 249).bold;
+const sky = chalk.rgb(49, 204, 255);
+const skyBold = chalk.rgb(49, 204, 255).bold;
+const dim = chalk.dim;
 
 // ── Wispy ghost icon (14 chars wide, 7 lines tall) ──
-// Pixel art ghost with dome head, eyes, and wavy bottom
 const ICON = [
-  `    ${sky("▄████▄")}    `,                     //     ▄████▄     (narrow rounded top)
-  `  ${sky("▄████████▄")}  `,                     //   ▄████████▄   (expanded dome)
-  `${sky("██████████████")}`,                     // ██████████████ (full body)
-  `${sky("████")}  ${sky("██")}  ${sky("████")}`, // ████  ██  ████ (eyes row 1)
-  `${sky("████")}  ${sky("██")}  ${sky("████")}`, // ████  ██  ████ (eyes row 2)
-  `${sky("██████████████")}`,                     // ██████████████ (body below eyes)
-  `  ${sky("▀██▀██▀██▀")}  `,                     //   ▀██▀██▀██▀   (wavy ghost bottom)
+  `    ${sky("▄████▄")}    `,
+  `  ${sky("▄████████▄")}  `,
+  `${sky("██████████████")}`,
+  `${sky("████")}  ${sky("██")}  ${sky("████")}`,
+  `${sky("████")}  ${sky("██")}  ${sky("████")}`,
+  `${sky("██████████████")}`,
+  `  ${sky("▀██▀██▀██▀")}  `,
 ];
+
+export const WISPY_VERSION = "1.1.0";
 
 export interface BannerOptions {
   modelName?: string;
@@ -24,9 +26,8 @@ export interface BannerOptions {
 
 export function showBanner(modelNameOrOptions?: string | BannerOptions): void {
   const cwd = process.cwd();
-  const version = "v1.0.0";
+  const version = `v${WISPY_VERSION}`;
 
-  // Handle both old signature (string) and new signature (options object)
   let modelName: string | undefined;
   let vertexai = false;
   let project: string | undefined;
@@ -47,25 +48,30 @@ export function showBanner(modelNameOrOptions?: string | BannerOptions): void {
   const displayModel = model
     .replace("gemini-", "Gemini ")
     .replace("gemma-", "Gemma ")
+    .replace("-preview-05-06", "")
+    .replace("-preview-05-20", "")
     .replace("-pro", " Pro")
     .replace("-flash", " Flash")
     .replace("-it", "");
 
   // Truncate cwd if too long
-  const maxCwd = 40;
+  const maxCwd = 45;
   const shortCwd = cwd.length > maxCwd ? "..." + cwd.slice(-maxCwd) : cwd;
 
   // Provider info
   const providerInfo = vertexai
-    ? chalk.green("Vertex AI") + chalk.dim(` (${project || "default"}${location ? `, ${location}` : ""})`)
-    : chalk.dim(displayModel);
+    ? chalk.green("Vertex AI") + dim(` (${project || "default"}${location ? `, ${location}` : ""})`)
+    : dim(displayModel);
+
+  // Session time
+  const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   console.log();
   console.log(`  ${ICON[0]}`);
   console.log(`  ${ICON[1]}`);
-  console.log(`  ${ICON[2]}   ${skyBold("Wispy")} ${chalk.dim(version)}`);
+  console.log(`  ${ICON[2]}   ${skyBold("Wispy")} ${dim(version)} ${dim("·")} ${dim(timeStr)}`);
   console.log(`  ${ICON[3]}   ${providerInfo}`);
-  console.log(`  ${ICON[4]}   ${chalk.dim(shortCwd)}`);
+  console.log(`  ${ICON[4]}   ${dim(shortCwd)}`);
   console.log(`  ${ICON[5]}`);
   console.log(`  ${ICON[6]}`);
   console.log();
@@ -76,8 +82,8 @@ export function showOnboardBanner(): void {
   console.log(`  ${ICON[0]}`);
   console.log(`  ${ICON[1]}`);
   console.log(`  ${ICON[2]}   ${skyBold("Welcome to Wispy")}`);
-  console.log(`  ${ICON[3]}   ${chalk.dim("Your autonomous AI agent")}`);
-  console.log(`  ${ICON[4]}   ${chalk.dim("Powered by Gemini")}`);
+  console.log(`  ${ICON[3]}   ${dim("Your autonomous AI agent")}`);
+  console.log(`  ${ICON[4]}   ${dim("Powered by Gemini")}`);
   console.log(`  ${ICON[5]}`);
   console.log(`  ${ICON[6]}`);
   console.log();

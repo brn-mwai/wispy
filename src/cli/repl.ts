@@ -20,7 +20,7 @@ import * as readline from "readline";
 import { existsSync } from "fs";
 import { join } from "path";
 import chalk from "chalk";
-import { showBanner } from "./ui/banner.js";
+import { showBanner, WISPY_VERSION } from "./ui/banner.js";
 import { t } from "./ui/theme.js";
 import { startSpinner, startThinkingSpinner, startToolSpinner, stopSpinner, updateSpinner, succeedSpinner, failSpinner } from "./ui/spinner.js";
 import { formatToolCall, type ToolCallDisplay } from "./ui/tool-display.js";
@@ -40,6 +40,9 @@ import { setApprovalHandler } from "../security/action-guard.js";
 import { showApprovalDialog } from "./permissions.js";
 import { CronService } from "../cron/service.js";
 import { ReminderService, type Reminder } from "../cron/reminders.js";
+import { printUpdateNotification } from "./update-checker.js";
+import { MarathonRenderer } from "./tui/marathon-renderer.js";
+import { registerChannel, onChannelEvent } from "../channels/dock.js";
 
 export interface ReplOpts {
   rootDir: string;
@@ -152,11 +155,36 @@ export async function startRepl(opts: ReplOpts) {
   reminderService.start();
   agent.setReminderService(reminderService);
 
+  // Marathon CLI renderer (initialized early for event wiring)
+  const marathonRenderer = new MarathonRenderer();
+
   // Wire Marathon service for NLP-based control
   // This enables natural language: "build me a todo app" instead of "/marathon Build a todo app"
   const { MarathonService } = await import("../marathon/service.js");
   const marathonService = new MarathonService(runtimeDir);
   agent.setMarathonService(marathonService, apiKeyInstance);
+
+  // Subscribe marathon events to CLI renderer
+  marathonService.onEvent((event) => {
+    marathonRenderer.handleEvent(event);
+  });
+
+  // Register CLI as a channel for cross-channel sync
+  registerChannel({
+    name: "cli",
+    type: "cli",
+    capabilities: { text: true, media: false, voice: false, buttons: false, reactions: false, groups: false, threads: false },
+    status: "connected",
+  });
+
+  // Listen for events from other channels (e.g. Telegram marathon updates)
+  onChannelEvent("cli", (event) => {
+    if (event.type === "marathon_update") {
+      marathonRenderer.handleEvent(event.data as any);
+    } else if (event.type === "notification") {
+      console.log(chalk.dim(`\n  [${event.source}] ${event.data.message || ""}`));
+    }
+  });
 
   const history = new CliHistory(runtimeDir);
   const tokenManager = new TokenManager();
@@ -180,11 +208,22 @@ export async function startRepl(opts: ReplOpts) {
     location: config.gemini.vertexai?.location,
   });
 
+  // Check for updates (non-blocking)
+  printUpdateNotification(WISPY_VERSION).catch(() => {});
+
   // Show quick tips
-  console.log(chalk.dim("  Tips: /help for commands • /quick for shortcuts • /marathon for background tasks"));
-  console.log(chalk.dim("  Just type naturally — Wispy understands: \"build me a dashboard\", \"fix the bug\", etc."));
+  const tips = [
+    "Type naturally: \"build me a REST API\", \"fix the login bug\"",
+    "/marathon <goal> for autonomous multi-step execution",
+    "/help for commands, /quick for shortcuts",
+  ];
+  for (const tip of tips) {
+    console.log(chalk.dim(`  ${chalk.rgb(49, 204, 255)("·")} ${tip}`));
+  }
   console.log();
   printSeparator();
+
+  // Marathon renderer already initialized above
 
   // ── Command completer for Tab autocomplete ──
   const completer = (line: string): [string[], string] => {
@@ -216,13 +255,22 @@ export async function startRepl(opts: ReplOpts) {
 
   process.on("uncaughtException", (err) => {
     stopSpinner();
-    console.error(chalk.red(`Fatal: ${err.message}`));
-    rl.prompt();
+    const msg = err?.message || String(err);
+    // Suppress noisy network/EPIPE errors
+    if (msg.includes("EPIPE") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT")) {
+      return;
+    }
+    console.error(chalk.red(`\n  Error: ${msg}`));
+    try { rl.prompt(); } catch {}
   });
   process.on("unhandledRejection", (err) => {
     stopSpinner();
-    console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
-    rl.prompt();
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("EPIPE") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT")) {
+      return;
+    }
+    console.error(chalk.red(`\n  Error: ${msg}`));
+    try { rl.prompt(); } catch {}
   });
 
   rl.prompt();
@@ -403,17 +451,27 @@ export async function startRepl(opts: ReplOpts) {
     rl.prompt();
   });
 
+  const cleanup = () => {
+    try { history.save(); } catch {}
+    try { mcpRegistry.stopAll(); } catch {}
+    try { cronService.stop(); } catch {}
+    try { reminderService.stop(); } catch {}
+  };
+
   rl.on("close", () => {
-    history.save();
-    mcpRegistry.stopAll();
+    cleanup();
     console.log(chalk.dim("\nGoodbye!\n"));
     process.exit(0);
   });
 
   rl.on("SIGINT", () => {
-    history.save();
-    mcpRegistry.stopAll();
+    cleanup();
     console.log(chalk.dim("\nGoodbye!\n"));
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", () => {
+    cleanup();
     process.exit(0);
   });
 }

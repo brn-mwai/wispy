@@ -5,7 +5,7 @@
  */
 
 import { Bot, type Context } from "grammy";
-import { registerChannel, updateChannelStatus } from "../dock.js";
+import { registerChannel, updateChannelStatus, broadcastChannelEvent } from "../dock.js";
 import { isPaired, pairUser } from "../../security/auth.js";
 import type { Agent } from "../../core/agent.js";
 import { createLogger } from "../../infra/logger.js";
