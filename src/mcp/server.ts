@@ -402,6 +402,68 @@ export async function startMcpServer(rootDir: string) {
     }
   );
 
+  // ═══ x402scan Tools ══════════════════════════════════════════════
+
+  server.tool(
+    "wispy_x402scan",
+    "Scan the agent's x402 wallet on Base blockchain. Returns balance, transaction history, spending stats, and runway estimate.",
+    { address: z.string().optional() },
+    async ({ address }) => {
+      try {
+        const { X402Scanner, formatScanSummary } = await import("../wallet/x402-scan.js");
+        const { getWalletAddress } = await import("../wallet/x402.js");
+        const addr = address || getWalletAddress(runtimeDir);
+        if (!addr) return { content: [{ type: "text" as const, text: "Wallet not initialized." }] };
+        const scanner = new X402Scanner(runtimeDir);
+        const summary = await scanner.scanWallet(addr);
+        return { content: [{ type: "text" as const, text: formatScanSummary(summary) }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "wispy_x402scan_verify",
+    "Verify an x402 payment transaction on-chain by its hash. Returns confirmation status, block, sender, recipient, and USDC value.",
+    { txHash: z.string() },
+    async ({ txHash }) => {
+      try {
+        const { X402Scanner, formatVerification } = await import("../wallet/x402-scan.js");
+        const scanner = new X402Scanner(runtimeDir);
+        const result = await scanner.verifyTransaction(txHash);
+        return { content: [{ type: "text" as const, text: formatVerification(result) }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "wispy_x402scan_history",
+    "Get recent USDC transaction history for the agent's wallet on Base.",
+    { limit: z.number().optional() },
+    async ({ limit }) => {
+      try {
+        const { X402Scanner } = await import("../wallet/x402-scan.js");
+        const { getWalletAddress } = await import("../wallet/x402.js");
+        const addr = getWalletAddress(runtimeDir);
+        if (!addr) return { content: [{ type: "text" as const, text: "Wallet not initialized." }] };
+        const scanner = new X402Scanner(runtimeDir);
+        const txs = await scanner.getUSDCTransfers(addr, { pageSize: limit || 20 });
+        if (txs.length === 0) return { content: [{ type: "text" as const, text: "No transactions found." }] };
+        const lines = txs.map(tx => {
+          const dir = tx.direction === "out" ? "-" : "+";
+          const peer = tx.direction === "out" ? tx.to : tx.from;
+          return `${dir}$${tx.value} ${peer.slice(0, 10)}... ${tx.timestamp.split("T")[0]} ${tx.hash.slice(0, 14)}...`;
+        });
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
   // Start stdio transport
   const transport = new StdioServerTransport();
   await server.connect(transport);

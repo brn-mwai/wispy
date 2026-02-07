@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vertex AI support in MCP server — auto-detects config or environment credentials
 - Skills and MCP registry wired into the MCP server agent
 
+#### x402scan — On-Chain Transaction Scanner
+- New `X402Scanner` class for scanning Base blockchain USDC transactions (`src/wallet/x402-scan.ts`)
+- `/x402scan` CLI command — full wallet scan with balance, spending stats, top recipients, runway estimate
+- `/x402scan history` — recent USDC transaction list with direction, peer, and date
+- `/x402scan verify <txHash>` — on-chain transaction verification with confirmations and block info
+- `/x402scan reconcile` — compare on-chain transactions vs local log, detect missing entries
+- MCP tools: `wispy_x402scan`, `wispy_x402scan_verify`, `wispy_x402scan_history`
+- BaseScan API integration for token transfer history (mainnet + Sepolia)
+- Fallback to local transaction log when BaseScan is unavailable
+
 ### Changed
 - REPL response flow restructured — cleaner output with blank lines, no separator clutter
 - Gateway `ClientManager` supports three client types: `web`, `cli`, `antigravity`
@@ -279,7 +289,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlight |
 |---------|------|-----------|
-| 1.2.0 | 2026-02-07 | Claude Code-style CLI, Antigravity channel, multimodal, live model switching |
+| 1.2.0 | 2026-02-07 | CLI overhaul, Antigravity channel, multimodal, model switching, x402scan |
 | 1.0.0 | 2026-02-06 | Public REST API, cross-platform installers, production release |
 | 0.7.0 | 2026-01-30 | Gemini 3 thinking levels, x402, ERC-8004, A2A protocols |
 | 0.6.2 | 2026-01-29 | Web Dashboard, WhatsApp, Browser Control |

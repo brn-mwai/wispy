@@ -35,7 +35,7 @@ const commands: SlashCommand[] = [
         "Marathon": ["marathon"],
         "System": ["config", "security", "logs", "tokens", "cost", "context", "stats", "doctor", "onboard"],
         "Utilities": ["export", "copy", "theme", "verbose", "checkpoints", "rewind"],
-        "Advanced": ["wallet", "peers", "cron", "agents", "plugins", "integrations", "browser", "voice"],
+        "Advanced": ["wallet", "x402scan", "peers", "cron", "agents", "plugins", "integrations", "browser", "voice"],
       };
 
       console.log(chalk.bold.cyan("\n  Wispy Commands\n"));
@@ -376,6 +376,73 @@ const commands: SlashCommand[] = [
         console.log(`  USDC:    ${t.dim("unavailable")}`);
       }
       console.log();
+    },
+  },
+  {
+    name: "x402scan",
+    description: "Scan x402 wallet transactions [verify <txHash>]",
+    handler: async (args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const { getWalletAddress } = await import("../wallet/x402.js");
+      const { X402Scanner, formatScanSummary, formatVerification } = await import("../wallet/x402-scan.js");
+
+      const addr = getWalletAddress(ctx.runtimeDir);
+      if (!addr) {
+        console.log(t.dim("\nWallet not initialized. Run /wallet first.\n"));
+        return;
+      }
+
+      const scanner = new X402Scanner(ctx.runtimeDir);
+      const parts = args.trim().split(/\s+/);
+      const subcommand = parts[0]?.toLowerCase();
+
+      if (subcommand === "verify" && parts[1]) {
+        // Verify a specific transaction
+        console.log(t.dim("\nVerifying transaction on-chain...\n"));
+        const verification = await scanner.verifyTransaction(parts[1]);
+        console.log(formatVerification(verification));
+        console.log();
+      } else if (subcommand === "reconcile") {
+        // Reconcile on-chain vs local log
+        console.log(t.dim("\nReconciling on-chain data with local log...\n"));
+        const result = await scanner.reconcile(addr);
+        console.log(`  Matched:       ${result.matched} transactions`);
+        console.log(`  On-chain only: ${result.onChainOnly.length}`);
+        console.log(`  Local only:    ${result.localOnly.length}`);
+        if (result.onChainOnly.length > 0) {
+          console.log(chalk.yellow(`\n  Missing from local log:`));
+          for (const tx of result.onChainOnly.slice(0, 5)) {
+            const dir = tx.direction === "out" ? "-" : "+";
+            console.log(`    ${dir}$${tx.value} ${tx.hash.slice(0, 14)}... ${tx.timestamp.split("T")[0]}`);
+          }
+        }
+        console.log();
+      } else if (subcommand === "history") {
+        // Show recent transactions
+        console.log(t.dim("\nFetching transaction history...\n"));
+        const txs = await scanner.getUSDCTransfers(addr, { pageSize: 20 });
+        if (txs.length === 0) {
+          console.log(t.dim("  No transactions found.\n"));
+          return;
+        }
+        for (const tx of txs.slice(0, 15)) {
+          const dir = tx.direction === "out" ? chalk.red("-") : chalk.green("+");
+          const peer = tx.direction === "out"
+            ? `${tx.to.slice(0, 6)}...${tx.to.slice(-4)}`
+            : `${tx.from.slice(0, 6)}...${tx.from.slice(-4)}`;
+          const date = tx.timestamp.split("T")[0];
+          console.log(`  ${dir}$${parseFloat(tx.value).toFixed(6)}  ${peer}  ${date}  ${chalk.dim(tx.hash.slice(0, 10))}...`);
+        }
+        console.log();
+      } else {
+        // Default: full wallet scan
+        console.log(t.dim("\nScanning wallet on Base...\n"));
+        const summary = await scanner.scanWallet(addr);
+        console.log(formatScanSummary(summary));
+        console.log(t.dim("\n  /x402scan history    — Transaction list"));
+        console.log(t.dim("  /x402scan verify <hash> — Verify tx on-chain"));
+        console.log(t.dim("  /x402scan reconcile — Compare on-chain vs local\n"));
+      }
     },
   },
   {
