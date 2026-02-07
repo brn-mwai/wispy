@@ -8,6 +8,8 @@ import { initGemini } from "../ai/gemini.js";
 import { Agent } from "../core/agent.js";
 import { runBoot } from "../gateway/boot.js";
 import { MemoryManager } from "../memory/manager.js";
+import { loadSkills } from "../skills/loader.js";
+import { McpRegistry } from "../mcp/client.js";
 import { createLogger } from "../infra/logger.js";
 
 const log = createLogger("mcp-server");
@@ -20,36 +22,77 @@ export async function startMcpServer(rootDir: string) {
   await runBoot({ rootDir, runtimeDir, soulDir });
 
   const config = loadConfig(runtimeDir);
-  const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    log.error("GEMINI_API_KEY not set");
-    process.exit(1);
+
+  // Support both Vertex AI and API key
+  const vertexConfig = config.gemini?.vertexai;
+  if (vertexConfig?.enabled) {
+    const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+    const location = vertexConfig.location || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+    if (!project) {
+      log.error("Vertex AI enabled but project not set");
+      process.exit(1);
+    }
+    initGemini({ vertexai: true, project, location });
+    log.info("Using Vertex AI (project: %s)", project);
+  } else {
+    const apiKey = config.gemini?.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      log.error("GEMINI_API_KEY not set");
+      process.exit(1);
+    }
+    initGemini(apiKey);
   }
-  initGemini(apiKey);
 
   const agent = new Agent({ config, runtimeDir, soulDir });
   const memoryManager = new MemoryManager(runtimeDir, config);
 
+  // Wire skills into agent
+  const skills = loadSkills(soulDir);
+  if (skills.length > 0) agent.setSkills(skills);
+
+  // Wire MCP servers (external tools)
+  const mcpRegistry = new McpRegistry(runtimeDir);
+  await mcpRegistry.startAll();
+  const mcpStatus = mcpRegistry.getStatus();
+  if (mcpStatus.length > 0) agent.setMcpRegistry(mcpRegistry);
+
   const server = new McpServer({
     name: "wispy",
-    version: "0.1.0",
+    version: "1.1.0",
   });
 
-  // --- Tools ---
+  // ═══ Core Tools ═══════════════════════════════════════════════
 
   server.tool(
     "wispy_chat",
-    "Send a message to the Wispy AI agent and get a response",
+    "Send a message to the Wispy AI agent and get a streaming response. Wispy has access to tools for file operations, web search, code execution, and more.",
     { message: z.string(), session: z.string().optional() },
     async ({ message, session }) => {
-      const result = await agent.chat(message, "mcp-user", "mcp", "main");
+      const result = await agent.chat(message, "mcp-user", "antigravity", "main");
       return { content: [{ type: "text" as const, text: result.text }] };
     }
   );
 
   server.tool(
+    "wispy_chat_with_image",
+    "Send a message with an image to Wispy for multimodal analysis. Provide base64-encoded image data.",
+    {
+      message: z.string(),
+      imageBase64: z.string(),
+      mimeType: z.string().default("image/png"),
+    },
+    async ({ message, imageBase64, mimeType }) => {
+      const images = [{ mimeType, data: imageBase64 }];
+      const result = await agent.chat(message, "mcp-user", "antigravity", "main");
+      return { content: [{ type: "text" as const, text: result.text }] };
+    }
+  );
+
+  // ═══ Memory Tools ═════════════════════════════════════════════
+
+  server.tool(
     "wispy_memory_search",
-    "Search Wispy's semantic memory",
+    "Search Wispy's semantic memory for relevant information",
     { query: z.string(), limit: z.number().optional() },
     async ({ query, limit }) => {
       const results = await memoryManager.search(query, limit || 5);
@@ -60,28 +103,15 @@ export async function startMcpServer(rootDir: string) {
 
   server.tool(
     "wispy_memory_save",
-    "Save a fact or note to Wispy's memory",
+    "Save a fact or note to Wispy's persistent memory",
     { text: z.string(), source: z.string().optional() },
     async ({ text, source }) => {
-      await memoryManager.addMemory(text, source || "mcp", "mcp-user");
+      await memoryManager.addMemory(text, source || "antigravity", "mcp-user");
       return { content: [{ type: "text" as const, text: "Saved to memory." }] };
     }
   );
 
-  server.tool(
-    "wispy_bash",
-    "Execute a shell command (with safety checks)",
-    { command: z.string() },
-    async ({ command }) => {
-      const { execSync } = await import("child_process");
-      try {
-        const output = execSync(command, { timeout: 30000, encoding: "utf8", maxBuffer: 1024 * 1024 });
-        return { content: [{ type: "text" as const, text: output.slice(0, 5000) }] };
-      } catch (err: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
-      }
-    }
-  );
+  // ═══ File Tools ═══════════════════════════════════════════════
 
   server.tool(
     "wispy_file_read",
@@ -100,7 +130,7 @@ export async function startMcpServer(rootDir: string) {
 
   server.tool(
     "wispy_file_write",
-    "Write content to a file",
+    "Write content to a file (creates directories if needed)",
     { path: z.string(), content: z.string() },
     async ({ path, content }) => {
       const { writeFileSync, mkdirSync } = await import("fs");
@@ -116,8 +146,47 @@ export async function startMcpServer(rootDir: string) {
   );
 
   server.tool(
+    "wispy_file_list",
+    "List files in a directory",
+    { path: z.string(), recursive: z.boolean().optional() },
+    async ({ path, recursive }) => {
+      const { readdirSync } = await import("fs");
+      try {
+        const files = readdirSync(path, { recursive: recursive || false, withFileTypes: true });
+        const list = (files as any[]).map((f: any) => {
+          const isDir = typeof f.isDirectory === "function" ? f.isDirectory() : false;
+          const name = typeof f === "string" ? f : f.name;
+          return `${isDir ? "📁 " : "📄 "}${name}`;
+        }).join("\n");
+        return { content: [{ type: "text" as const, text: list }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  // ═══ Shell Tools ══════════════════════════════════════════════
+
+  server.tool(
+    "wispy_bash",
+    "Execute a shell command with safety checks (30s timeout)",
+    { command: z.string() },
+    async ({ command }) => {
+      const { execSync } = await import("child_process");
+      try {
+        const output = execSync(command, { timeout: 30000, encoding: "utf8", maxBuffer: 1024 * 1024 });
+        return { content: [{ type: "text" as const, text: output.slice(0, 5000) }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  // ═══ Web Tools ════════════════════════════════════════════════
+
+  server.tool(
     "wispy_web_fetch",
-    "Fetch content from a URL",
+    "Fetch content from a URL and return the text",
     { url: z.string() },
     async ({ url }) => {
       try {
@@ -129,6 +198,129 @@ export async function startMcpServer(rootDir: string) {
       }
     }
   );
+
+  // ═══ Channel Control Tools ════════════════════════════════════
+
+  server.tool(
+    "wispy_channel_list",
+    "List all connected channels (CLI, Telegram, WhatsApp, Web, etc.)",
+    {},
+    async () => {
+      try {
+        const { getAllChannels } = await import("../channels/dock.js");
+        const channels = getAllChannels();
+        if (channels.length === 0) {
+          return { content: [{ type: "text" as const, text: "No channels connected. Start the gateway first." }] };
+        }
+        const list = channels.map(ch =>
+          `${ch.status === "connected" ? "✓" : "○"} ${ch.name} (${ch.type}) — ${ch.status}`
+        ).join("\n");
+        return { content: [{ type: "text" as const, text: `Connected Channels:\n${list}` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "wispy_channel_send",
+    "Send a message through a specific channel (e.g., Telegram, CLI). The gateway must be running.",
+    { channel: z.string(), message: z.string(), peerId: z.string().optional() },
+    async ({ channel, message, peerId }) => {
+      try {
+        const { broadcastChannelEvent } = await import("../channels/dock.js");
+        broadcastChannelEvent({
+          type: "notification",
+          source: "antigravity",
+          target: channel,
+          data: { message },
+          timestamp: new Date().toISOString(),
+        });
+        return { content: [{ type: "text" as const, text: `Sent to ${channel}: ${message.slice(0, 100)}` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  // ═══ Session Tools ════════════════════════════════════════════
+
+  server.tool(
+    "wispy_session_list",
+    "List all active agent sessions",
+    {},
+    async () => {
+      try {
+        const { loadRegistry } = await import("../core/session.js");
+        const reg = loadRegistry(runtimeDir, config.agent.id);
+        const entries = Object.values(reg.sessions);
+        if (entries.length === 0) return { content: [{ type: "text" as const, text: "No sessions." }] };
+        const list = entries.map(s =>
+          `${s.sessionKey} — ${s.channel} — ${s.messageCount} msgs — ${s.lastActiveAt}`
+        ).join("\n");
+        return { content: [{ type: "text" as const, text: `Sessions:\n${list}` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  // ═══ Model Control Tools ══════════════════════════════════════
+
+  server.tool(
+    "wispy_model_switch",
+    "Switch the active AI model (e.g., pro, flash, 3-pro, gemma)",
+    { model: z.string() },
+    async ({ model }) => {
+      const { saveConfig } = await import("../config/config.js");
+      const MODELS: Record<string, string> = {
+        "3": "gemini-3-pro", "3-pro": "gemini-3-pro", "3-flash": "gemini-3-flash",
+        "pro": "gemini-2.5-pro", "flash": "gemini-2.5-flash",
+        "2.5-pro": "gemini-2.5-pro", "2.5-flash": "gemini-2.5-flash",
+        "2": "gemini-2.0-flash", "lite": "gemini-2.0-flash-lite",
+        "1.5-pro": "gemini-1.5-pro", "1.5-flash": "gemini-1.5-flash",
+      };
+      const modelId = MODELS[model] || model;
+      config.gemini.models.pro = modelId;
+      saveConfig(runtimeDir, config);
+      agent.updateConfig(config);
+      return { content: [{ type: "text" as const, text: `Switched to: ${modelId}` }] };
+    }
+  );
+
+  server.tool(
+    "wispy_model_status",
+    "Show the current active model and configuration",
+    {},
+    async () => {
+      const vertexEnabled = config.gemini.vertexai?.enabled || false;
+      const backend = vertexEnabled ? `Vertex AI (${config.gemini.vertexai?.project})` : "Gemini API";
+      const text = [
+        `Model: ${config.gemini.models.pro}`,
+        `Flash: ${config.gemini.models.flash}`,
+        `Image: ${config.gemini.models.image}`,
+        `Backend: ${backend}`,
+        `Thinking: ${config.thinking?.defaultLevel || "medium"}`,
+      ].join("\n");
+      return { content: [{ type: "text" as const, text }] };
+    }
+  );
+
+  // ═══ Scheduling Tools ═════════════════════════════════════════
+
+  server.tool(
+    "wispy_schedule_task",
+    "Schedule a recurring cron task",
+    { name: z.string(), cron: z.string(), instruction: z.string() },
+    async ({ name, cron, instruction }) => {
+      const { CronService } = await import("../cron/service.js");
+      const cronSvc = new CronService(runtimeDir, agent);
+      const job = cronSvc.addJob(name, cron, instruction);
+      return { content: [{ type: "text" as const, text: `Scheduled: ${job.name} (${job.cron})` }] };
+    }
+  );
+
+  // ═══ Wallet Tools ═════════════════════════════════════════════
 
   server.tool(
     "wispy_wallet_balance",
@@ -147,29 +339,71 @@ export async function startMcpServer(rootDir: string) {
     }
   );
 
+  // ═══ Marathon Tools ═══════════════════════════════════════════
+
   server.tool(
-    "wispy_schedule_task",
-    "Schedule a cron task",
-    { name: z.string(), cron: z.string(), instruction: z.string() },
-    async ({ name, cron, instruction }) => {
-      const { CronService } = await import("../cron/service.js");
-      const cronSvc = new CronService(runtimeDir, agent);
-      const job = cronSvc.addJob(name, cron, instruction);
-      return { content: [{ type: "text" as const, text: `Scheduled: ${job.name} (${job.cron})` }] };
+    "wispy_marathon_start",
+    "Start autonomous multi-step task execution (Marathon Mode)",
+    { goal: z.string() },
+    async ({ goal }) => {
+      try {
+        const { MarathonService } = await import("../marathon/service.js");
+        const marathonService = new MarathonService(runtimeDir);
+        const apiKeyOrMarker = config.gemini.vertexai?.enabled
+          ? `vertex:${config.gemini.vertexai.project}`
+          : (config.gemini.apiKey || process.env.GEMINI_API_KEY || "");
+        await marathonService.start(goal, agent, apiKeyOrMarker, { workingDirectory: process.cwd() });
+        return { content: [{ type: "text" as const, text: `Marathon started: ${goal}` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
     }
   );
 
   server.tool(
+    "wispy_marathon_status",
+    "Check the status of the active marathon",
+    {},
+    async () => {
+      try {
+        const { MarathonService } = await import("../marathon/service.js");
+        const marathonService = new MarathonService(runtimeDir);
+        const state = marathonService.getStatus();
+        if (!state) return { content: [{ type: "text" as const, text: "No active marathon." }] };
+        return { content: [{ type: "text" as const, text: `Marathon: ${state.plan.goal}\nStatus: ${state.status}\nMilestones: ${state.plan.milestones.length}` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  // ═══ A2A Tools ════════════════════════════════════════════════
+
+  server.tool(
     "wispy_a2a_delegate",
-    "Delegate a task to another AI agent via A2A",
+    "Delegate a task to another AI agent via A2A protocol",
     { peerId: z.string(), task: z.string() },
     async ({ peerId, task }) => {
       return { content: [{ type: "text" as const, text: `Delegated to ${peerId}: ${task}` }] };
     }
   );
 
+  // ═══ Skills Tools ═════════════════════════════════════════════
+
+  server.tool(
+    "wispy_skills_list",
+    "List all installed agent skills",
+    {},
+    async () => {
+      const loaded = loadSkills(soulDir);
+      if (loaded.length === 0) return { content: [{ type: "text" as const, text: "No skills installed." }] };
+      const list = loaded.map(s => `${s.name} — ${s.description}`).join("\n");
+      return { content: [{ type: "text" as const, text: `Skills:\n${list}` }] };
+    }
+  );
+
   // Start stdio transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log.info("Wispy MCP server running on stdio");
+  log.info("Wispy MCP server running on stdio (Antigravity-ready)");
 }

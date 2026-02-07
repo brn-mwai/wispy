@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] — 2026-02-07
+
+### Added
+
+#### Claude Code-Style CLI Overhaul
+- New `OutputRenderer` class with markdown-aware terminal rendering (`src/cli/tui/output-renderer.ts`)
+- Claude Code-style tool call display with `⏺` markers, Title Case names, indented args, and duration badges (`src/cli/ui/tool-display.ts`)
+- Status bar wired into REPL — shows tokens, cost, session, and context usage between responses
+- Structured response lifecycle: thinking → tool calls → formatted markdown → stats line
+- Connected CLI mode via WebSocket — attach multiple CLIs to a running gateway (`src/cli/connected-repl.ts`)
+- `--connect [url]` flag on `wispy chat` command with auto-detect of running gateway
+- Gateway sync protocol: `CliConnectFrame`, `CliBroadcastFrame`, `SessionUpdateFrame` for multi-CLI state sync
+
+#### Antigravity Channel (VS Code Extension)
+- New channel adapter for VS Code Antigravity extension (`src/channels/antigravity/adapter.ts`)
+- Google Account authentication — extension users identified by `googleId`, `email`, `displayName`
+- `AntigravityConnectFrame` and `AntigravityWelcomeFrame` gateway protocol frames
+- Capabilities welcome message sent on connect (chat, memory, file ops, bash, marathon, a2a, skills)
+- Cross-channel event broadcasting between Antigravity and other channels (Telegram, CLI, etc.)
+- Gateway auto-starts Antigravity adapter; shows `Antigravity: ready` in startup summary
+
+#### Multimodal Input
+- Image file support in CLI chat — attach images by path (e.g., `analyze this /path/to/image.png`)
+- `/image <path> [prompt]` command for direct image analysis
+- `ImagePart` interface in Gemini integration for inline base64 image data
+- Images passed through `chatStream()` to Gemini's multimodal API
+
+#### Live Model Switching
+- `/model` command now hot-swaps the active model without restart
+- `/vertex enable` hot-swaps with Gemini re-initialization
+- `Agent.updateConfig()` method for runtime config updates
+
+#### MCP Server Upgrade
+- Complete rewrite of MCP server with 18+ tools for Antigravity integration (`src/mcp/server.ts`)
+- Tools: `wispy_chat`, `wispy_chat_with_image`, `wispy_memory_search/save`, `wispy_file_read/write/list`, `wispy_bash`, `wispy_web_fetch`, `wispy_channel_list/send`, `wispy_session_list`, `wispy_model_switch/status`, `wispy_schedule_task`, `wispy_wallet_balance`, `wispy_marathon_start/status`, `wispy_a2a_delegate`, `wispy_skills_list`
+- Vertex AI support in MCP server — auto-detects config or environment credentials
+- Skills and MCP registry wired into the MCP server agent
+
+### Changed
+- REPL response flow restructured — cleaner output with blank lines, no separator clutter
+- Gateway `ClientManager` supports three client types: `web`, `cli`, `antigravity`
+- Gateway protocol adds `tool_result` chunk type to `StreamFrame`
+- Gateway shutdown cleans up Antigravity adapter
+- Version bumped to 1.2.0
+
+---
+
 ## [1.0.0] — 2026-02-06
 
 ### Added
@@ -232,6 +279,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlight |
 |---------|------|-----------|
+| 1.2.0 | 2026-02-07 | Claude Code-style CLI, Antigravity channel, multimodal, live model switching |
 | 1.0.0 | 2026-02-06 | Public REST API, cross-platform installers, production release |
 | 0.7.0 | 2026-01-30 | Gemini 3 thinking levels, x402, ERC-8004, A2A protocols |
 | 0.6.2 | 2026-01-29 | Web Dashboard, WhatsApp, Browser Control |

@@ -494,13 +494,18 @@ const commands: SlashCommand[] = [
         return;
       }
 
+      // Hot-swap: update the live config object so routeTask picks up the change immediately
       config.gemini.models.pro = modelId;
       config.gemini.models.flash = modelId.includes("flash") ? modelId : config.gemini.models.flash;
       saveConfig(ctx.runtimeDir, config);
 
+      // Also update agent's internal config reference
+      ctx.agent.updateConfig(config);
+
       const isFree = modelId.includes("exp") || modelId.includes("gemma");
       const tag = isFree ? " (free tier)" : "";
-      console.log(t.ok(`\nModel set to: ${modelId}${tag}\n`));
+      console.log(t.ok(`\n  Switched to: ${modelId}${tag}`));
+      console.log(t.dim("  Active now — no restart needed.\n"));
     },
   },
   {
@@ -1000,6 +1005,61 @@ const commands: SlashCommand[] = [
     },
   },
   {
+    name: "image",
+    description: "Send an image to the agent [path] [prompt]",
+    handler: async (args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const { readFileSync, existsSync } = await import("fs");
+      const { extname } = await import("path");
+
+      const parts = args.trim().split(/\s+/);
+      const filePath = parts[0];
+      const prompt = parts.slice(1).join(" ") || "Describe this image in detail.";
+
+      if (!filePath) {
+        console.log(chalk.bold("\n  Image Analysis\n"));
+        console.log(chalk.dim("  Usage: /image <path> [prompt]\n"));
+        console.log("  Examples:");
+        console.log(chalk.cyan("    /image screenshot.png") + chalk.dim(" — Describe this image"));
+        console.log(chalk.cyan("    /image photo.jpg What's in this picture?"));
+        console.log(chalk.cyan("    /image diagram.png Explain the architecture"));
+        console.log(chalk.dim("\n  You can also paste image paths directly in your message.\n"));
+        return;
+      }
+
+      if (!existsSync(filePath)) {
+        console.log(chalk.red(`\n  File not found: ${filePath}\n`));
+        return;
+      }
+
+      const mimeMap: Record<string, string> = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+      };
+      const ext = extname(filePath).toLowerCase();
+      const mimeType = mimeMap[ext];
+      if (!mimeType) {
+        console.log(chalk.red(`\n  Unsupported image format: ${ext}\n`));
+        return;
+      }
+
+      console.log(chalk.dim(`\n  ◆ Loading ${filePath}...`));
+      const data = readFileSync(filePath).toString("base64");
+      const images = [{ mimeType, data }];
+
+      console.log(chalk.dim(`  ◆ Analyzing with ${prompt.slice(0, 40)}...\n`));
+
+      let fullResponse = "";
+      for await (const chunk of ctx.agent.chatStream(prompt, "cli-user", "cli", "main", { images })) {
+        if (chunk.type === "text") {
+          process.stdout.write(chunk.content);
+          fullResponse += chunk.content;
+        }
+      }
+      console.log();
+    },
+  },
+  {
     name: "browser",
     description: "Browser control [screenshot|navigate]",
     handler: async (args, ctx) => {
@@ -1147,11 +1207,20 @@ const commands: SlashCommand[] = [
         };
         saveConfig(ctx.runtimeDir, config);
 
-        console.log(chalk.bold.green("\n  Vertex AI Enabled\n"));
-        console.log(`  Project:  ${chalk.cyan(project)}`);
-        console.log(`  Location: ${chalk.cyan(config.gemini.vertexai.location)}`);
-        console.log(chalk.dim("\n  Restart Wispy to apply changes."));
-        console.log(chalk.dim("  Make sure you're authenticated: gcloud auth application-default login\n"));
+        // Hot-swap: re-initialize Gemini with Vertex AI
+        try {
+          const { initGemini } = await import("../ai/gemini.js");
+          initGemini({ vertexai: true, project, location: config.gemini.vertexai!.location || "us-central1" });
+          ctx.agent.updateConfig(config);
+          console.log(chalk.bold.green("\n  Vertex AI Enabled\n"));
+          console.log(`  Project:  ${chalk.cyan(project)}`);
+          console.log(`  Location: ${chalk.cyan(config.gemini.vertexai!.location)}`);
+          console.log(chalk.dim("  Active now — no restart needed."));
+          console.log(chalk.dim("  Make sure you're authenticated: gcloud auth application-default login\n"));
+        } catch (err) {
+          console.log(chalk.red(`\n  Failed to enable Vertex AI: ${err instanceof Error ? err.message : err}`));
+          console.log(chalk.dim("  Config saved. Restart Wispy to retry.\n"));
+        }
         return;
       }
 

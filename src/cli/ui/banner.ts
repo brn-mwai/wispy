@@ -15,7 +15,7 @@ const ICON = [
   `  ${sky("▀██▀██▀██▀")}  `,
 ];
 
-export const WISPY_VERSION = "1.1.1";
+export const WISPY_VERSION = "1.2.0";
 
 export interface BannerOptions {
   modelName?: string;

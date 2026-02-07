@@ -35,7 +35,7 @@ export interface StreamFrame extends Frame {
   type: "stream";
   payload: {
     chunk: string;
-    chunkType: "text" | "thinking" | "tool_call" | "done";
+    chunkType: "text" | "thinking" | "tool_call" | "tool_result" | "done";
   };
 }
 
@@ -44,6 +44,58 @@ export interface ErrorFrame extends Frame {
   payload: {
     code: string;
     message: string;
+  };
+}
+
+// ── CLI Sync Frames ──────────────────────────────────────────────
+
+export interface CliConnectFrame extends Frame {
+  type: "cli_connect";
+  payload: {
+    clientName: string;
+    peerId: string;
+  };
+}
+
+export interface CliBroadcastFrame extends Frame {
+  type: "cli_broadcast";
+  payload: {
+    source: string;
+    message: string;
+    data?: unknown;
+  };
+}
+
+export interface SessionUpdateFrame extends Frame {
+  type: "session_update";
+  payload: {
+    tokens: number;
+    cost: number;
+    context: number;
+    session: string;
+  };
+}
+
+// ── Antigravity Extension Frames ─────────────────────────────────
+
+export interface AntigravityConnectFrame extends Frame {
+  type: "antigravity_connect";
+  payload: {
+    googleId: string;
+    email: string;
+    displayName: string;
+    avatarUrl?: string;
+    extensionVersion?: string;
+    vscodeVersion?: string;
+    workspaceName?: string;
+  };
+}
+
+export interface AntigravityWelcomeFrame extends Frame {
+  type: "antigravity_welcome";
+  payload: {
+    clientId: string;
+    capabilities: string[];
   };
 }
 

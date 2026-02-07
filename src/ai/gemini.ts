@@ -528,6 +528,11 @@ export function getClient(): GoogleGenAI {
 
 export type ThinkingLevel = "none" | "minimal" | "low" | "medium" | "high" | "ultra";
 
+export interface ImagePart {
+  mimeType: string;
+  data: string; // base64 encoded
+}
+
 export interface GenerateOptions {
   model: string;
   systemPrompt?: string;
@@ -544,6 +549,8 @@ export interface GenerateOptions {
   // Vertex AI advanced features
   useGoogleSearch?: boolean;  // Ground responses with Google Search
   useCodeExecution?: boolean; // Enable code execution sandbox
+  // Multimodal — images to attach to the last user message
+  images?: ImagePart[];
 }
 
 export interface GenerateResult {
@@ -574,11 +581,23 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
   // Build contents array with proper structure
   const contents: Content[] = [];
 
-  for (const m of opts.messages) {
-    contents.push({
-      role: m.role,
-      parts: [{ text: m.content }],
-    });
+  for (let i = 0; i < opts.messages.length; i++) {
+    const m = opts.messages[i];
+    const parts: Part[] = [{ text: m.content }];
+
+    // Attach images to the last user message
+    if (opts.images && opts.images.length > 0 && i === opts.messages.length - 1 && m.role === "user") {
+      for (const img of opts.images) {
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType,
+            data: img.data,
+          },
+        } as Part);
+      }
+    }
+
+    contents.push({ role: m.role, parts });
   }
 
   // Add function call/response pairs for agentic loop (native tools only)

@@ -146,6 +146,13 @@ export class Agent {
     this.mode = mode;
   }
 
+  /**
+   * Hot-swap config — used by /model and /vertex to change models without restart.
+   */
+  updateConfig(config: WispyConfig): void {
+    this.ctx = { ...this.ctx, config };
+  }
+
   getMode(): AgentMode {
     return this.mode;
   }
@@ -550,7 +557,8 @@ export class Agent {
     userMessage: string,
     peerId: string,
     channel: string,
-    sessionType: SessionType = "main"
+    sessionType: SessionType = "main",
+    options?: { images?: Array<{ mimeType: string; data: string }> }
   ): AsyncGenerator<{ type: string; content: string }> {
     const { config, runtimeDir, soulDir } = this.ctx;
     const agentId = config.agent.id;
@@ -605,6 +613,8 @@ export class Agent {
         messages,
         tools: this.buildToolDeclarations(),
         thinkingLevel,
+        // Only attach images on the first loop iteration
+        images: loopCount === 1 ? options?.images : undefined,
       });
 
       if (result.thinking) {

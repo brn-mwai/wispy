@@ -187,15 +187,29 @@ export async function startGateway(opts: GatewayOpts) {
     log.info("Agent reloaded with new config");
   });
 
+  // Start Antigravity channel adapter (always available for VS Code extension)
+  const { startAntigravity, registerAntigravityClient, unregisterAntigravityClient } =
+    await import("../channels/antigravity/adapter.js");
+  startAntigravity(agent);
+
   // Start WebSocket server
   const wsPort = opts.port || config.channels.web?.port || 4000;
   const clientManager = new ClientManager();
+
+  // Wire Antigravity extension connect/disconnect to the adapter
+  clientManager.onAntigravityConnect = (clientId, payload) => {
+    registerAntigravityClient(clientId, payload);
+  };
+  clientManager.onAntigravityDisconnect = (clientId) => {
+    unregisterAntigravityClient(clientId);
+  };
 
   clientManager.start(wsPort, async (client, frame: Frame) => {
     const chatFrame = frame as ChatFrame;
     const { message, peerId, channel, sessionType } = chatFrame.payload;
 
     try {
+      let tokenEstimate = 0;
       for await (const chunk of agent.chatStream(
         message,
         peerId || client.peerId,
@@ -206,7 +220,18 @@ export async function startGateway(opts: GatewayOpts) {
           client.id,
           createFrame("stream", { chunk: chunk.content, chunkType: chunk.type })
         );
+        if (chunk.type === "text") {
+          tokenEstimate += Math.ceil(chunk.content.length / 4);
+        }
       }
+
+      // Broadcast session_update to all CLI clients after response
+      clientManager.broadcastSessionUpdate({
+        tokens: tokenEstimate,
+        cost: 0,
+        context: 0,
+        session: (sessionType as string) || "main",
+      });
     } catch (err) {
       log.error({ err }, "Chat error");
       clientManager.send(
@@ -277,11 +302,13 @@ export async function startGateway(opts: GatewayOpts) {
   Memory:     Heartbeat every ${config.memory.heartbeatIntervalMinutes} min
   Wallet:     ${config.wallet?.enabled ? "enabled" : "disabled"}
   Browser:    ${browserStatus}
+  Antigravity: ready (Google Account auth)
   Telegram:   ${telegramStatus}
   WhatsApp:   ${whatsappStatus}
   `);
 
   // Handle shutdown
+  const { stopAntigravity } = await import("../channels/antigravity/adapter.js");
   const shutdown = () => {
     log.info("Shutting down...");
     heartbeat.stop();
@@ -289,6 +316,7 @@ export async function startGateway(opts: GatewayOpts) {
     reminderService.stop();
     mcpRegistry.stopAll();
     clientManager.close();
+    try { stopAntigravity(); } catch {}
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

@@ -1,29 +1,36 @@
 /**
- * Wispy REPL — Clean interactive CLI experience.
+ * Wispy REPL — Claude Code-style interactive CLI experience.
  *
  * Layout:
  *   [cloud icon]  Wispy v0.4.6
  *                 Gemini 2.5 Flash
  *                 C:\Users\...
  *
- *   ─────────────────────────────────
- *   ❯ user input here
+ *   ❯ user input
  *
- *   ● Agent response here.
+ *   ◆ Thinking...
  *
- *   ─────────────────────────────────
- *   ❯ _
- *     ? for shortcuts
+ *   ⏺ Read File
+ *     path: src/index.ts
+ *     ✓ Done (0.3s)
+ *
+ *   Here's the **formatted markdown** response.
+ *
+ *   2.5 Pro · 1,234 tokens · $0.02 · 12% context · 3.2s
+ *   ● Tokens: 1,234 ($0.02) │ Session: main │ Context: 12%
  */
 
 import * as readline from "readline";
-import { existsSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "fs";
+import { join, extname } from "path";
 import chalk from "chalk";
 import { showBanner, WISPY_VERSION } from "./ui/banner.js";
 import { t } from "./ui/theme.js";
 import { startSpinner, startThinkingSpinner, startToolSpinner, stopSpinner, updateSpinner, succeedSpinner, failSpinner } from "./ui/spinner.js";
 import { formatToolCall, type ToolCallDisplay } from "./ui/tool-display.js";
+import { OutputRenderer } from "./tui/output-renderer.js";
+import { StatusBar, type StatusBarState } from "./tui/status-bar.js";
+import { calculateLayout, onResize } from "./tui/layout.js";
 import { CliHistory } from "./history.js";
 import { handleSlashCommand, getCommands, verboseMode, type CommandContext } from "./commands.js";
 import { loadEnv } from "../infra/dotenv.js";
@@ -50,9 +57,52 @@ export interface ReplOpts {
   soulDir: string;
 }
 
-function printSeparator(): void {
-  const width = process.stdout.columns || 80;
-  console.log(chalk.dim("─".repeat(width)));
+// ── Multimodal helpers ───────────────────────────────────────────
+
+const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
+
+const MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
+};
+
+interface ImagePart {
+  mimeType: string;
+  data: string;
+}
+
+/**
+ * Extract image file paths from user input and load them as base64.
+ * Returns the cleaned text (without paths) and loaded images.
+ */
+function extractImages(input: string): { text: string; images: ImagePart[] } {
+  const images: ImagePart[] = [];
+  // Match file paths (Windows and Unix) that end with image extensions
+  const pathRegex = /(?:[A-Za-z]:[\\\/]|[~.\/\\])[\w\-. \\\/]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg)/gi;
+  const matches = input.match(pathRegex) || [];
+
+  let text = input;
+  for (const match of matches) {
+    const resolved = match.replace(/\\/g, "/");
+    const ext = extname(resolved).toLowerCase();
+    if (IMAGE_EXTS.has(ext) && existsSync(match)) {
+      try {
+        const data = readFileSync(match).toString("base64");
+        images.push({ mimeType: MIME_MAP[ext] || "image/png", data });
+        text = text.replace(match, "").trim();
+      } catch {
+        // Ignore unreadable files
+      }
+    }
+  }
+
+  if (!text) text = "Describe this image.";
+  return { text, images };
 }
 
 export async function startRepl(opts: ReplOpts) {
@@ -86,9 +136,9 @@ export async function startRepl(opts: ReplOpts) {
   // Initialize Gemini with Vertex AI or API key
   const vertexConfig = config.gemini.vertexai;
   let apiKeyInstance: string;
+  let vertexEnabled = false;
 
   if (vertexConfig?.enabled) {
-    // Vertex AI mode - uses Google Cloud credentials
     const project = vertexConfig.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
     const location = vertexConfig.location || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 
@@ -98,10 +148,10 @@ export async function startRepl(opts: ReplOpts) {
     }
 
     initGemini({ vertexai: true, project, location });
-    apiKeyInstance = `vertex:${project}`; // Marker for Vertex mode
+    apiKeyInstance = `vertex:${project}`;
+    vertexEnabled = true;
     console.log(chalk.dim(`  Using Vertex AI (project: ${project}, location: ${location})`));
   } else {
-    // Standard API key mode
     const apiKey = config.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       console.error("GEMINI_API_KEY not set. Add it to .env or config, or enable Vertex AI.");
@@ -144,32 +194,29 @@ export async function startRepl(opts: ReplOpts) {
 
   const reminderService = new ReminderService(runtimeDir);
   reminderService.setNotificationCallback(async (reminder: Reminder) => {
-    // Display reminder in CLI with bell sound
     console.log();
     console.log(chalk.yellow.bold("⏰ REMINDER"));
     console.log(chalk.white(`   ${reminder.message}`));
     console.log();
-    process.stdout.write("\x07"); // Terminal bell
+    process.stdout.write("\x07");
     return true;
   });
   reminderService.start();
   agent.setReminderService(reminderService);
 
-  // Marathon CLI renderer (initialized early for event wiring)
+  // Marathon CLI renderer
   const marathonRenderer = new MarathonRenderer();
 
   // Wire Marathon service for NLP-based control
-  // This enables natural language: "build me a todo app" instead of "/marathon Build a todo app"
   const { MarathonService } = await import("../marathon/service.js");
   const marathonService = new MarathonService(runtimeDir);
   agent.setMarathonService(marathonService, apiKeyInstance);
 
-  // Subscribe marathon events to CLI renderer
   marathonService.onEvent((event) => {
     marathonRenderer.handleEvent(event);
   });
 
-  // Register CLI as a channel for cross-channel sync
+  // Register CLI as a channel
   registerChannel({
     name: "cli",
     type: "cli",
@@ -177,7 +224,7 @@ export async function startRepl(opts: ReplOpts) {
     status: "connected",
   });
 
-  // Listen for events from other channels (e.g. Telegram marathon updates)
+  // Listen for events from other channels
   onChannelEvent("cli", (event) => {
     if (event.type === "marathon_update") {
       marathonRenderer.handleEvent(event.data as any);
@@ -199,8 +246,16 @@ export async function startRepl(opts: ReplOpts) {
     tokenManager,
   };
 
+  // ── Output Renderer & Status Bar ──
+  const renderer = new OutputRenderer();
+  const layout = calculateLayout();
+  const statusBar = new StatusBar(layout);
+
+  onResize((newLayout) => {
+    statusBar.updateLayout(newLayout);
+  });
+
   // ── Launch layout ──
-  const vertexEnabled = config.gemini.vertexai?.enabled || false;
   showBanner({
     modelName: config.gemini.models.pro,
     vertexai: vertexEnabled,
@@ -221,9 +276,7 @@ export async function startRepl(opts: ReplOpts) {
     console.log(chalk.dim(`  ${chalk.rgb(49, 204, 255)("·")} ${tip}`));
   }
   console.log();
-  printSeparator();
-
-  // Marathon renderer already initialized above
+  renderer.renderSeparator();
 
   // ── Command completer for Tab autocomplete ──
   const completer = (line: string): [string[], string] => {
@@ -252,11 +305,9 @@ export async function startRepl(opts: ReplOpts) {
     (rl as any).history?.unshift(entry);
   }
 
-
   process.on("uncaughtException", (err) => {
     stopSpinner();
     const msg = err?.message || String(err);
-    // Suppress noisy network/EPIPE errors
     if (msg.includes("EPIPE") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT")) {
       return;
     }
@@ -317,7 +368,6 @@ export async function startRepl(opts: ReplOpts) {
       }
 
       if (matches.length === 1) {
-        // Exact or single match - execute it
         try { await handleSlashCommand("/" + matches[0].name, cmdCtx); } catch (err) {
           console.error(chalk.red(`Command error: ${err instanceof Error ? err.message : String(err)}`));
         }
@@ -326,7 +376,6 @@ export async function startRepl(opts: ReplOpts) {
         return;
       }
 
-      // Multiple matches - show options
       console.log(chalk.bold(`\n  Matching commands for "${input}":\n`));
       for (const cmd of matches) {
         console.log(`    ${chalk.cyan("/" + cmd.name.padEnd(14))} ${chalk.dim(cmd.description)}`);
@@ -350,11 +399,26 @@ export async function startRepl(opts: ReplOpts) {
     // ── Chat ──
     const thinkStart = Date.now();
     startThinkingSpinner();
-    try {
-      let firstText = true;
-      let outputChars = 0;
 
-      for await (const chunk of agent.chatStream(input, "cli-user", "cli", "main")) {
+    // Track tool timing
+    let currentToolStart = 0;
+    let currentToolName = "";
+    let accumulatedText = "";
+    let firstText = true;
+
+    // Extract images from input (multimodal support)
+    const { text: chatText, images: chatImages } = extractImages(input);
+    if (chatImages.length > 0) {
+      stopSpinner();
+      console.log(chalk.dim(`  ◆ ${chatImages.length} image(s) attached`));
+      startThinkingSpinner();
+    }
+
+    try {
+      for await (const chunk of agent.chatStream(
+        chatText, "cli-user", "cli", "main",
+        chatImages.length > 0 ? { images: chatImages } : undefined
+      )) {
         switch (chunk.type) {
           case "thinking":
             updateSpinner(`Thinking... (${((Date.now() - thinkStart) / 1000).toFixed(1)}s)`);
@@ -362,14 +426,30 @@ export async function startRepl(opts: ReplOpts) {
 
           case "tool_call": {
             stopSpinner();
-            const tc: ToolCallDisplay = { name: chunk.content, args: {}, status: "pending" };
+
+            // Parse tool args if available
+            let toolArgs: Record<string, unknown> = {};
+            try {
+              if (chunk.content.includes("{")) {
+                const jsonStart = chunk.content.indexOf("{");
+                toolArgs = JSON.parse(chunk.content.slice(jsonStart));
+                currentToolName = chunk.content.slice(0, jsonStart).trim();
+              } else {
+                currentToolName = chunk.content;
+              }
+            } catch {
+              currentToolName = chunk.content;
+            }
+
+            const tc: ToolCallDisplay = { name: currentToolName, args: toolArgs, status: "pending" };
             process.stdout.write(formatToolCall(tc) + "\n");
-            startToolSpinner(chunk.content);
+            currentToolStart = Date.now();
+            startToolSpinner(currentToolName);
             break;
           }
 
           case "tool_result": {
-            // Determine if tool succeeded or failed
+            const elapsed = Date.now() - currentToolStart;
             const isError = chunk.content.toLowerCase().includes("error") ||
                            chunk.content.toLowerCase().includes("failed") ||
                            chunk.content.toLowerCase().includes("exception");
@@ -381,24 +461,25 @@ export async function startRepl(opts: ReplOpts) {
             }
 
             const maxLen = verboseMode ? 2000 : 200;
-            const tr: ToolCallDisplay = {
-              name: "tool",
+            const tc: ToolCallDisplay = {
+              name: currentToolName || "tool",
               args: {},
               status: isError ? "error" : "ok",
-              result: chunk.content.slice(0, maxLen)
+              result: chunk.content.slice(0, maxLen),
+              durationMs: elapsed,
             };
-            process.stdout.write(formatToolCall(tr) + "\n");
+            process.stdout.write(formatToolCall(tc) + "\n");
             break;
           }
 
           case "text":
             if (firstText) {
               stopSpinner();
-              process.stdout.write("\n" + chalk.white.bold("● "));
+              console.log(); // blank line before response text
               firstText = false;
             }
+            accumulatedText += chunk.content;
             process.stdout.write(chunk.content);
-            outputChars += chunk.content.length;
             break;
 
           case "context_compacted":
@@ -413,17 +494,16 @@ export async function startRepl(opts: ReplOpts) {
         }
       }
 
-      const outputTokens = Math.ceil(outputChars / 4);
+      // ── Stats line ──
+      const outputTokens = Math.ceil(accumulatedText.length / 4);
       const inputTokens = Math.ceil(input.length / 4) + 100;
       tokenManager.recordUsage("gemini-2.5-flash", inputTokens, outputTokens);
 
       const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(1);
-      const totalTk = (inputTokens + outputTokens).toLocaleString();
+      const totalTk = inputTokens + outputTokens;
       const stats = tokenManager.getStats();
-      const cost = stats.sessionCost.toFixed(4);
-
+      const cost = stats.sessionCost;
       const pct = Math.round((stats.sessionTokens / stats.budget.maxTokensPerSession) * 100);
-      const modeTag = agent.getMode() === "plan" ? chalk.yellow(" [plan]") : "";
 
       // Format model name
       const modelDisplay = config.gemini.models.pro
@@ -433,18 +513,30 @@ export async function startRepl(opts: ReplOpts) {
         .map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
         .join(" ");
 
-      // Backend indicator
-      const backendTag = vertexEnabled ? chalk.green(" [Vertex]") : "";
+      renderer.renderStats({
+        model: modelDisplay,
+        tokens: totalTk,
+        cost,
+        contextPercent: pct,
+        elapsed,
+        mode: agent.getMode() === "plan" ? "plan" : undefined,
+        backend: vertexEnabled ? "Vertex" : undefined,
+      });
 
-      console.log();
-      console.log(chalk.dim(`  ${modelDisplay} · ${totalTk} tokens · $${cost} · ${pct}% context · ${elapsed}s${modeTag}${backendTag}`));
-      console.log();
-      printSeparator();
-      console.log(chalk.dim("  ? for shortcuts"));
+      // ── Status bar (rendered between responses) ──
+      statusBar.setState({
+        tokens: stats.sessionTokens,
+        cost: stats.sessionCost,
+        memory: "active",
+        session: currentSession,
+        contextPercent: pct,
+      });
+      statusBar.render();
+      console.log(); // spacing after status bar
+
     } catch (err) {
       stopSpinner();
       console.error(chalk.red(`\nError: ${err instanceof Error ? err.message : String(err)}`));
-      printSeparator();
     }
 
     rl.resume();

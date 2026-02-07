@@ -1267,9 +1267,33 @@ api
 program
   .command("chat", { isDefault: true })
   .description("Start interactive REPL (default)")
-  .action(async () => {
-    const { startRepl } = await import("./repl.js");
-    await startRepl({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
+  .option("--connect [url]", "Connect to a running gateway instead of starting a local agent")
+  .action(async (opts) => {
+    if (opts.connect) {
+      const url = typeof opts.connect === "string" ? opts.connect : "ws://localhost:4000";
+      const { startConnectedRepl } = await import("./connected-repl.js");
+      await startConnectedRepl(url);
+    } else {
+      // Auto-detect running gateway and show hint
+      try {
+        const net = await import("net");
+        const isPortOpen = await new Promise<boolean>((resolve) => {
+          const sock = new net.Socket();
+          sock.setTimeout(500);
+          sock.on("connect", () => { sock.destroy(); resolve(true); });
+          sock.on("error", () => { resolve(false); });
+          sock.on("timeout", () => { sock.destroy(); resolve(false); });
+          sock.connect(4000, "127.0.0.1");
+        });
+        if (isPortOpen) {
+          const chalk = (await import("chalk")).default;
+          console.log(chalk.dim("  Gateway running on :4000. Use --connect to attach.\n"));
+        }
+      } catch {}
+
+      const { startRepl } = await import("./repl.js");
+      await startRepl({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
+    }
   });
 
 // === MCP SERVER (for Antigravity) ===
