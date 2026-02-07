@@ -658,26 +658,35 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     })
   );
 
-  const text = response.text || "";
+  // Extract text, thinking, and tool calls from parts manually
+  // Avoid using response.text directly - it logs a warning when function calls are present
+  let text = "";
   let thinking: string | undefined;
   const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const rawFunctionCalls: FunctionCall[] = [];
 
-  // Extract thinking and tool calls from parts (native function calling)
-  if (response.candidates?.[0]?.content?.parts) {
-    for (const part of response.candidates[0].content.parts) {
-      if ((part as any).thought) {
-        thinking = (part as any).text;
-      }
-      if ((part as any).functionCall) {
-        const fc = (part as any).functionCall as FunctionCall;
-        rawFunctionCalls.push(fc);
-        toolCalls.push({
-          name: fc.name || "",
-          args: (fc.args as Record<string, unknown>) || {},
-        });
-      }
+  const parts = response.candidates?.[0]?.content?.parts || [];
+  let hasFunctionCalls = false;
+
+  for (const part of parts) {
+    if ((part as any).thought) {
+      thinking = (part as any).text;
+    } else if ((part as any).functionCall) {
+      hasFunctionCalls = true;
+      const fc = (part as any).functionCall as FunctionCall;
+      rawFunctionCalls.push(fc);
+      toolCalls.push({
+        name: fc.name || "",
+        args: (fc.args as Record<string, unknown>) || {},
+      });
+    } else if ((part as any).text) {
+      text += (part as any).text;
     }
+  }
+
+  // Only fall back to response.text if no parts were found and no function calls
+  if (!text && !hasFunctionCalls) {
+    try { text = response.text || ""; } catch {}
   }
 
   // For non-native models, parse tool calls from text output
