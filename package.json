@@ -1,6 +1,6 @@
 {
   "name": "wispy-ai",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Autonomous AI agent with Marathon Mode — multi-day task execution powered by Gemini 3 with Thinking Levels & Thought Signatures, multi-agent orchestration, 27+ integrations",
   "type": "module",
   "bin": {
