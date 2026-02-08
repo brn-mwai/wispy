@@ -68,7 +68,15 @@ function parseSkillMd(content: string, dirName: string): SkillManifest {
       inTools = true;
     } else if (inTools && line.startsWith("### ")) {
       if (currentTool) manifest.tools.push(currentTool as any);
-      currentTool = { name: line.slice(4).trim(), description: "", parameters: {} };
+      // Sanitize tool name for Gemini: [a-zA-Z_][a-zA-Z0-9_.\-:]{0,63}
+      const rawName = line.slice(4).trim().replace(/`/g, "");
+      let safeName = rawName.replace(/[^a-zA-Z0-9_.\-:]/g, "_").replace(/^[^a-zA-Z_]+/, "").slice(0, 64);
+      if (!safeName || safeName === "_") {
+        // Skip invalid / empty tool names (likely section headers)
+        currentTool = null;
+        continue;
+      }
+      currentTool = { name: safeName, description: "", parameters: { type: "object", properties: {} } };
     } else if (currentTool && line.trim() && !line.startsWith("#")) {
       if (!currentTool.description) {
         currentTool.description = line.trim();

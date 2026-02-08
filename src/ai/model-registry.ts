@@ -78,9 +78,6 @@ export function getProvider(model: string): ModelProvider | undefined {
   if (model.startsWith("gpt") || model.startsWith("o1") || model.startsWith("o3")) {
     return providers.get("openai-compat");
   }
-  if (model.startsWith("claude")) {
-    return providers.get("openai-compat");
-  }
   if (model.includes("/") || model.includes(":")) {
     // Ollama-style model names (e.g., "gemma3:27b", "llama3:8b")
     return providers.get("ollama");

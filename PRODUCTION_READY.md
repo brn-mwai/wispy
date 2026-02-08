@@ -161,16 +161,16 @@ const marathon = {
 
 ## What Makes Wispy Different
 
-| Feature | Gemini CLI | Claude Code | Cursor | Wispy |
-|---------|------------|-------------|--------|-------|
-| Context Window | 200K | 200K | 128K | **1M+** |
-| Loop Detection | ❌ | ❌ | ❌ | **✅** |
-| Planning Mode | ❌ | ❌ | ⚠️ | **✅ Marathon** |
-| Self-Verification | ❌ | ❌ | ❌ | **✅** |
-| Retry Logic | ❌ | ⚠️ | ⚠️ | **✅** |
-| Spending Limits | ❌ | ❌ | ❌ | **✅** |
-| Multi-Channel | ❌ | ❌ | ❌ | **✅ 7+** |
-| Free Tier | 10 req/day | ❌ | ❌ | **60 req/min** |
+| Feature | Gemini CLI | Cursor | Wispy |
+|---------|------------|--------|-------|
+| Context Window | 200K | 128K | **1M+** |
+| Loop Detection | ❌ | ❌ | **✅** |
+| Planning Mode | ❌ | ⚠️ | **✅ Marathon** |
+| Self-Verification | ❌ | ❌ | **✅** |
+| Retry Logic | ❌ | ⚠️ | **✅** |
+| Spending Limits | ❌ | ❌ | **✅** |
+| Multi-Channel | ❌ | ❌ | **✅ 7+** |
+| Free Tier | 10 req/day | ❌ | **60 req/min** |
 
 ---
 
@@ -194,7 +194,7 @@ wispy doctor            # Check configuration
 
 ## Summary
 
-Wispy is **production ready** and directly addresses every major complaint from Gemini CLI, Claude Code, and Cursor users:
+Wispy is **production ready** and directly addresses every major complaint from Gemini CLI and Cursor users:
 
 1. **No more infinite loops** - Automatic detection and forced replanning
 2. **No more rate limit crashes** - Exponential backoff with Retry-After support

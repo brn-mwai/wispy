@@ -19,6 +19,8 @@
   <a href="https://github.com/brn-mwai/wispy/actions"><img src="https://img.shields.io/github/actions/workflow/status/brn-mwai/wispy/ci.yml?style=flat-square&label=build" alt="Build" /></a>
   <a href="https://docs.wispy.cc"><img src="https://img.shields.io/badge/docs-docs.wispy.cc-31ccff?style=flat-square" alt="Docs" /></a>
   <a href="https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7"><img src="https://img.shields.io/badge/Base-Sepolia-blue?style=flat-square&logo=ethereum" alt="Base Sepolia" /></a>
+  <a href="https://dorahacks.io/hackathon/x402"><img src="https://img.shields.io/badge/Hackathon-x402%20Agentic%20Commerce-purple?style=flat-square" alt="x402 Hackathon" /></a>
+  <a href="https://github.com/hausorlabs/wispy"><img src="https://img.shields.io/badge/Submission-Hausor%20Labs-31ccff?style=flat-square" alt="Hausor Labs" /></a>
 </p>
 
 <p align="center">
@@ -238,6 +240,152 @@ See the full API documentation at [docs.wispy.cc/developers](https://docs.wispy.
 
 ---
 
+## Agentic Commerce — x402 Hackathon Submission
+
+> **SF Agentic Commerce x402 Hackathon** (SKALE Labs, Feb 2026) — Targeting all 5 tracks.
+>
+> **An AI agent that can spend money on the internet by itself.**
+
+Wispy's agentic commerce integration enables fully autonomous agent-to-service payments on SKALE's blockchain. The agent discovers paid APIs, decides whether they're worth paying within a budget, pays with crypto via the x402 protocol, encrypts sensitive transactions with BITE v2 threshold encryption, and produces a complete audit trail — all without human intervention.
+
+**Full implementation: [`src/integrations/agentic-commerce/`](src/integrations/agentic-commerce/)**
+
+### Track Coverage
+
+| Track | Prize | What We Demonstrate |
+|-------|-------|---------------------|
+| **1. Overall Best Agent** | $9,500 | End-to-end: discover paid API → decide ROI → pay with USDC → deliver result → audit trail |
+| **2. x402 Tool Usage** | $7,000 | Chained x402 calls with EIP-3009 signed authorizations, budget-aware spending, per-call tracking |
+| **3. AP2 Integration** | $7,000 | Intent → Cart → Payment → Receipt mandate chain with failure handling and rollback |
+| **4. DeFi Agent** | $3,000 | Multi-source research via Algebra DEX subgraphs, risk engine with guardrails, on-chain swaps |
+| **5. Encrypted Agents (BITE v2)** | $4,500 | BLS threshold encryption of transactions, conditional execution, on-chain verification |
+
+### Architecture
+
+```
+src/integrations/agentic-commerce/
+├── index.ts                        # Integration entry point (11 agent tools)
+├── config.ts                       # SKALE chain config, Algebra DEX contracts, ABIs
+├── x402/
+│   ├── buyer.ts                    # x402 buyer client — HTTP 402 → EIP-3009 → retry
+│   ├── seller.ts                   # Mock x402 seller endpoints (@x402/express)
+│   └── tracker.ts                  # Per-call spend tracking + daily audit ledger
+├── ap2/
+│   ├── mandates.ts                 # Intent/Cart/Payment mandate objects
+│   ├── receipts.ts                 # Payment receipts + transaction records
+│   └── flow.ts                     # AP2 orchestration engine (mandate chain)
+├── defi/
+│   ├── swap.ts                     # Algebra DEX integration + direct USDC transfers
+│   └── risk-engine.ts              # Risk controls, position limits, guardrails
+├── bite/
+│   ├── encrypted-tx.ts             # BITE v2 BLS threshold encryption + on-chain submission
+│   └── conditional.ts              # Conditional execution (time-lock, delivery-proof)
+├── demo/
+│   ├── server.ts                   # Starts all mock x402 services
+│   ├── runner.ts                   # Runs all 5 track demos end-to-end
+│   ├── verify.ts                   # On-chain verification utilities
+│   └── scenarios/
+│       ├── track1-overall.ts       # Full agent commerce lifecycle
+│       ├── track2-x402.ts          # Chained x402 paid API calls
+│       ├── track3-ap2.ts           # AP2 mandate flow demo
+│       ├── track4-defi.ts          # DeFi research + swap demo
+│       └── track5-bite.ts          # BITE encrypted transaction demo
+├── tests/                          # 46 tests (vitest) — 100% passing
+│   ├── ap2-flow.test.ts
+│   ├── bite-encrypt.test.ts
+│   ├── integration.test.ts
+│   ├── risk-engine.test.ts
+│   └── tracker.test.ts
+└── README.md                       # Detailed integration docs
+```
+
+**25 TypeScript files | 4,470 lines of code | 46/46 tests passing | 0 TypeScript errors**
+
+### How It Works
+
+**x402 Protocol Flow:**
+```
+Agent discovers paid API → HTTP 402 response → Agent signs EIP-3009 USDC authorization
+→ Kobaru facilitator settles on SKALE → Agent retries with payment proof → Gets data
+```
+
+**BITE v2 Encryption Flow:**
+```
+Agent encrypts tx (to + calldata) with BLS threshold keys → Submits to SKALE BITE address
+→ Tx is opaque in mempool (no MEV/front-running) → Validators cooperatively decrypt (2t+1)
+→ Agent verifies decryption via bite_getDecryptedTransactionData RPC
+```
+
+**DeFi Agent Flow:**
+```
+Agent queries Algebra subgraph → Checks pool liquidity on-chain → Runs risk engine
+→ Executes swap via SwapRouter (or falls back to direct transfer) → Logs trade decision
+```
+
+### Agent Tools (11 tools registered)
+
+| Tool | Track | Description |
+|------|-------|-------------|
+| `x402_pay_and_fetch` | 1, 2 | Access paid APIs via x402 protocol with automatic payment |
+| `x402_check_budget` | 1, 2 | Check daily budget, spending limits, remaining allowance |
+| `x402_audit_trail` | 1, 2 | Full payment audit trail with per-call breakdown |
+| `ap2_purchase` | 3 | AP2 mandate flow: intent → cart → payment → receipt |
+| `ap2_get_receipts` | 3 | Retrieve AP2 transaction records and receipts |
+| `defi_research` | 4 | Multi-source market research via Algebra subgraphs |
+| `defi_swap` | 4 | Risk-controlled token swap on Algebra DEX |
+| `defi_trade_log` | 4 | Trade decisions with reason codes and risk scores |
+| `bite_encrypt_payment` | 5 | BITE v2 BLS threshold encryption of transactions |
+| `bite_check_and_execute` | 5 | Conditional execution of encrypted transactions |
+| `bite_lifecycle_report` | 5 | Encrypted payment lifecycle audit |
+
+### Network & Contracts
+
+| Component | Value |
+|-----------|-------|
+| **Chain** | SKALE BITE V2 Sandbox (Chain ID: 103698795) |
+| **RPC** | `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox` |
+| **USDC** | `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8` |
+| **Facilitator** | `https://gateway.kobaru.io` |
+| **Algebra SwapRouter** | `0x3012E9049d05B4B5369D690114D5A5861EbB85cb` |
+| **Algebra QuoterV2** | `0x03f8B4b140249Dc7B2503C928E7258CCe1d91F1A` |
+| **Algebra Factory** | `0x10253594A832f967994b44f33411940533302ACb` |
+| **BITE Magic Address** | `0x42495445204D452049274d20454e435259505444` |
+| **Gas** | Free (SKALE is gasless) |
+
+### Run the Demo
+
+```bash
+# Install dependencies
+npm install
+
+# Start mock x402 services
+npx tsx src/integrations/agentic-commerce/demo/server.ts
+
+# Run all 5 track demos
+npx tsx src/integrations/agentic-commerce/demo/runner.ts
+
+# Run with real on-chain transactions (requires funded wallet)
+AGENT_PRIVATE_KEY=0x... npx tsx src/integrations/agentic-commerce/demo/runner.ts
+
+# Run tests
+npx vitest run src/integrations/agentic-commerce/tests/
+```
+
+### Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| AI Agent | Wispy (TypeScript, Gemini 2.5 Pro) |
+| Blockchain | SKALE BITE V2 Sandbox |
+| Payments | x402 protocol (EIP-3009 signed USDC) |
+| Wallet | viem + @x402/evm |
+| DEX | Algebra Integral v1.2.2 (concentrated liquidity) |
+| Encryption | BITE v2 BLS threshold (@skalenetwork/bite) |
+| Authorization | AP2 mandate protocol |
+| Mock Services | Express.js + @x402/express |
+
+---
+
 ## Configuration
 
 ### Option 1: Gemini API Key (Simplest)
@@ -418,6 +566,9 @@ Full API docs: [docs.wispy.cc/developers](https://docs.wispy.cc/developers)
 | Contract | Address | Network |
 |----------|---------|---------|
 | Agent Registry | [`0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7`](https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7) | Base Sepolia |
+| USDC (Sandbox) | `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8` | SKALE BITE V2 Sandbox |
+| Algebra SwapRouter | `0x3012E9049d05B4B5369D690114D5A5861EbB85cb` | SKALE BITE V2 Sandbox |
+| Algebra Factory | `0x10253594A832f967994b44f33411940533302ACb` | SKALE BITE V2 Sandbox |
 
 ---
 

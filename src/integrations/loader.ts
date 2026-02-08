@@ -88,7 +88,6 @@ async function importAllIntegrations(ctx: IntegrationContext): Promise<Integrati
 
   // AI Models
   await importSafe("./ai-models/openai.js");
-  await importSafe("./ai-models/anthropic.js");
   await importSafe("./ai-models/ollama.js");
 
   // Productivity
@@ -112,6 +111,9 @@ async function importAllIntegrations(ctx: IntegrationContext): Promise<Integrati
   // Social
   await importSafe("./social/twitter.js");
   await importSafe("./social/email-smtp.js");
+
+  // Agentic Commerce (x402 hackathon)
+  await importSafe("./agentic-commerce/index.js");
 
   return instances;
 }
