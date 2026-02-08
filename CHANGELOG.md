@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-#### Claude Code-Style CLI Overhaul
+#### CLI Overhaul
 - New `OutputRenderer` class with markdown-aware terminal rendering (`src/cli/tui/output-renderer.ts`)
-- Claude Code-style tool call display with `⏺` markers, Title Case names, indented args, and duration badges (`src/cli/ui/tool-display.ts`)
+- Structured tool call display with `⏺` markers, Title Case names, indented args, and duration badges (`src/cli/ui/tool-display.ts`)
 - Status bar wired into REPL — shows tokens, cost, session, and context usage between responses
 - Structured response lifecycle: thinking → tool calls → formatted markdown → stats line
 - Connected CLI mode via WebSocket — attach multiple CLIs to a running gateway (`src/cli/connected-repl.ts`)

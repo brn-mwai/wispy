@@ -1163,7 +1163,7 @@ const commands: SlashCommand[] = [
       const PROVIDERS = {
         gemini: { name: "Google Gemini", color: chalk.blue, models: "gemini-3-pro, gemini-2.5-flash, etc." },
         openai: { name: "OpenAI", color: chalk.green, models: "gpt-4o, gpt-4-turbo, o1, etc." },
-        anthropic: { name: "Anthropic Claude", color: chalk.magenta, models: "claude-opus-4, claude-sonnet-4, etc." },
+        anthropic: { name: "Anthropic", color: chalk.magenta, models: "Various models" },
         ollama: { name: "Ollama (Local)", color: chalk.yellow, models: "llama3, mistral, codellama, etc." },
         openrouter: { name: "OpenRouter", color: chalk.cyan, models: "Any model via OpenRouter" },
         groq: { name: "Groq", color: chalk.red, models: "llama-3.3-70b, mixtral-8x7b, etc." },

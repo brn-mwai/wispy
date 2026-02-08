@@ -54,8 +54,6 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
   "text-embedding-005": { contextWindow: 2048, inputCostPer1M: 0.025, outputCostPer1M: 0 },
   // Other providers (for reference)
   "gpt-4o": { contextWindow: 128_000, inputCostPer1M: 2.50, outputCostPer1M: 10.0 },
-  "claude-opus-4": { contextWindow: 200_000, inputCostPer1M: 15.0, outputCostPer1M: 75.0 },
-  "claude-sonnet-4": { contextWindow: 200_000, inputCostPer1M: 3.0, outputCostPer1M: 15.0 },
 };
 
 interface ModelSpec {

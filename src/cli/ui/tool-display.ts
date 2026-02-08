@@ -28,7 +28,7 @@ function truncate(s: string, max: number): string {
 }
 
 /**
- * Format a tool call invocation line — Claude Code style.
+ * Format a tool call invocation line.
  *
  * Pending (tool just invoked):
  *   ⏺ Read File

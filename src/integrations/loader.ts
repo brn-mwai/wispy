@@ -88,7 +88,6 @@ async function importAllIntegrations(ctx: IntegrationContext): Promise<Integrati
 
   // AI Models
   await importSafe("./ai-models/openai.js");
-  await importSafe("./ai-models/anthropic.js");
   await importSafe("./ai-models/ollama.js");
 
   // Productivity

@@ -1,5 +1,5 @@
 /**
- * Wispy REPL — Claude Code-style interactive CLI experience.
+ * Wispy REPL — interactive CLI experience.
  *
  * Layout:
  *   [cloud icon]  Wispy v0.4.6
@@ -490,6 +490,10 @@ export async function startRepl(opts: ReplOpts) {
 
           case "done":
             if (firstText) stopSpinner();
+            // Ensure response text ends with a newline before stats
+            if (accumulatedText && !accumulatedText.endsWith("\n")) {
+              process.stdout.write("\n");
+            }
             break;
         }
       }
@@ -532,7 +536,6 @@ export async function startRepl(opts: ReplOpts) {
         contextPercent: pct,
       });
       statusBar.render();
-      console.log(); // spacing after status bar
 
     } catch (err) {
       stopSpinner();

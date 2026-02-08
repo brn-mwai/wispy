@@ -92,7 +92,6 @@ Choose your AI provider:
 1) Google Gemini (Recommended - Free tier available)
 2) Vertex AI (Enterprise - requires GCP)
 3) OpenAI (GPT-4)
-4) Anthropic (Claude)
 ```
 
 ### Step 2: API Key
