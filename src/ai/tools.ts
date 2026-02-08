@@ -1145,7 +1145,10 @@ export function getToolDeclarations(
       functionDeclarations: uniqueDeclarations.map((t) => ({
         name: t.name,
         description: t.description,
-        parameters: t.parameters,
+        // Gemini requires parameters schema to have type "object"
+        parameters: t.parameters?.type
+          ? t.parameters
+          : { type: "object", properties: (t.parameters && Object.keys(t.parameters).length > 0) ? t.parameters : {} },
       })),
     },
   ];

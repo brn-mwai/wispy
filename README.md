@@ -418,6 +418,9 @@ Full API docs: [docs.wispy.cc/developers](https://docs.wispy.cc/developers)
 | Contract | Address | Network |
 |----------|---------|---------|
 | Agent Registry | [`0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7`](https://sepolia.basescan.org/address/0x158B236CC840FD3039a3Cf5D72AEfBF2550045C7) | Base Sepolia |
+| USDC (Sandbox) | `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8` | SKALE BITE V2 Sandbox |
+| Algebra SwapRouter | `0x3012E9049d05B4B5369D690114D5A5861EbB85cb` | SKALE BITE V2 Sandbox |
+| Algebra Factory | `0x10253594A832f967994b44f33411940533302ACb` | SKALE BITE V2 Sandbox |
 
 ---
 
@@ -457,7 +460,7 @@ npm run dev
 ---
 
 <p align="center">
-  <strong>Wispy</strong> is built by <a href="https://hausorlabs.com">Hausor Labs Team (HL Team)</a>
+  <strong>Wispy</strong> is built by <a href="https://hausorlabs.tech">Hausor Labs Team (HL Team)</a>
 </p>
 
 <p align="center">

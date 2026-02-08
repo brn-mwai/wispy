@@ -2,12 +2,13 @@
  * Centralized output renderer for the Wispy CLI.
  *
  * Handles markdown rendering, tool call formatting, thinking display,
- * stats lines, and separators — producing Claude Code-style structured output.
+ * stats lines, and separators — producing structured terminal output.
  */
 
 import chalk from "chalk";
 import { Marked } from "marked";
-import markedTerminal from "marked-terminal";
+// @ts-ignore - named export exists at runtime but types only declare default
+import { markedTerminal } from "marked-terminal";
 import { t } from "../ui/theme.js";
 
 // ── Markdown renderer ────────────────────────────────────────────
@@ -95,7 +96,7 @@ export class OutputRenderer {
   }
 
   /**
-   * Render a tool call invocation — Claude Code style.
+   * Render a tool call invocation.
    *
    * Format:
    *   ⏺ Read File

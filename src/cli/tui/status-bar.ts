@@ -44,7 +44,7 @@ export class StatusBar {
   }
 
   render(): void {
-    const { statusRow, width } = this.layout;
+    const { width } = this.layout;
     const { tokens, cost, memory, session, contextPercent } = this.state;
 
     const formattedTokens = tokens.toLocaleString("en-US");
@@ -64,7 +64,7 @@ export class StatusBar {
       ? inner + " ".repeat(width - inner.length)
       : inner.slice(0, width);
 
-    screen.moveTo(statusRow, 1);
-    screen.write(style(padded));
+    // Render inline (no absolute positioning) to avoid empty gaps
+    process.stdout.write(style(padded) + "\n");
   }
 }
