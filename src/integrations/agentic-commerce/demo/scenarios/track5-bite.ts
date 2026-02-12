@@ -57,7 +57,7 @@ export async function runTrack5(privateKey?: string): Promise<string> {
   // When live, self-transfer to avoid losing funds to a hardcoded address
   const demoRecipient = privateKey
     ? privateKeyToAccount(privateKey as `0x${string}`).address
-    : ("0x742d35Cc6634C0532925a3b844Bc9e7595f2bD28" as `0x${string}`);
+    : ("0x742d35CC6634c0532925a3B844bc9e7595F2Bd28" as `0x${string}`);
 
   const transferData = encodeFunctionData({
     abi: ERC20_ABI,
@@ -127,7 +127,7 @@ export async function runTrack5(privateKey?: string): Promise<string> {
   log(``);
 
   const payment2 = await bite.encryptPayment({
-    to: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD28",
+    to: "0x742d35CC6634c0532925a3B844bc9e7595F2Bd28",
     data: transferData,
     gasLimit: 300_000,
     condition: {

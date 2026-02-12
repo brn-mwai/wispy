@@ -52,7 +52,11 @@ function makeRouteConfig(payTo: string, price: string, network: Network, descrip
         scheme: "exact",
         network,
         payTo,
-        price: `$${Number(price) / 1_000_000}`,
+        price: {
+          amount: price,
+          asset: SKALE_BITE_SANDBOX.usdc,
+          extra: { name: "USDC", version: "1" },
+        },
         maxTimeoutSeconds: 300,
       },
     ],
