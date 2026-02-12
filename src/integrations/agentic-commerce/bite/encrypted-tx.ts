@@ -535,7 +535,7 @@ export class EncryptedCommerce {
       lines.push(`### Decrypted Data (post-consensus)`);
       lines.push(`- **To:** \`${payment.decryptedData.to}\``);
       lines.push(
-        `- **Data:** \`${payment.decryptedData.data.slice(0, 40)}...\``,
+        `- **Data:** \`${String(payment.decryptedData.data).slice(0, 40)}...\``,
       );
       lines.push(``);
     }

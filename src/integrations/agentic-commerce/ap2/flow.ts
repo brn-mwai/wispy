@@ -124,12 +124,16 @@ export class AP2Flow {
         `AP2: ${params.description}`,
       );
 
-      // Extract delivery data
+      // Extract delivery data (clone first — body may have been read by x402 SDK)
       let deliveryData: unknown = null;
       try {
-        deliveryData = await response.json();
+        deliveryData = await response.clone().json();
       } catch {
-        deliveryData = await response.text();
+        try {
+          deliveryData = await response.clone().text();
+        } catch {
+          deliveryData = { note: "Response body consumed by x402 settlement" };
+        }
       }
 
       // Get tx hash from payment history
