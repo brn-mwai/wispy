@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { loadEnv } from "../infra/dotenv.js";
 import { logger, createLogger } from "../infra/logger.js";
 
@@ -10,11 +12,21 @@ logger.level = "silent";
 
 const log = createLogger("cli");
 
-const ROOT_DIR = process.cwd();
-const RUNTIME_DIR = resolve(ROOT_DIR, ".wispy");
+// Resolve ROOT_DIR: prefer the package install directory so soul/skills always load,
+// but fall back to cwd if running from source (dev mode).
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PKG_ROOT = resolve(__dirname, "..", ".."); // dist/cli/program.js -> project root
+
+const ROOT_DIR = existsSync(resolve(PKG_ROOT, "wispy", "SOUL.md")) ? PKG_ROOT : process.cwd();
+const RUNTIME_DIR = resolve(process.env.WISPY_HOME || (process.platform === "win32"
+  ? resolve(process.env.USERPROFILE || process.env.HOME || process.cwd(), ".wispy")
+  : resolve(process.env.HOME || process.cwd(), ".wispy")));
 const SOUL_DIR = resolve(ROOT_DIR, "wispy");
 
-loadEnv(ROOT_DIR);
+// Load env from both the package root and the runtime home
+loadEnv(PKG_ROOT);
+loadEnv(RUNTIME_DIR.replace(/[/\\]\.wispy$/, ""));
 
 /**
  * Initialize Gemini with either Vertex AI or API key based on config
