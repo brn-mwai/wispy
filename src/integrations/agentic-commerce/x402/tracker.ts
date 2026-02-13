@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { COMMERCE_DEFAULTS } from "../config.js";
+import { COMMERCE_DEFAULTS, SKALE_BITE_SANDBOX } from "../config.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ export class SpendTracker {
     for (let i = 0; i < report.records.length; i++) {
       const r = report.records[i];
       const hash = r.txHash
-        ? `\`${r.txHash.slice(0, 10)}...\``
+        ? `[\`${r.txHash.slice(0, 10)}...\`](${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.txHash})`
         : "pending";
       lines.push(
         `| ${i + 1} | ${r.timestamp.slice(11, 19)} | ${r.service} | $${r.amount.toFixed(6)} | \`${r.recipient.slice(0, 8)}...\` | ${hash} | ${r.status} |`,

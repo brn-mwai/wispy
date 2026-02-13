@@ -317,6 +317,58 @@ Simulate a Chainlink CRE workflow locally.
 {"tool": "cre_simulate", "args": {"workflow": "defi-monitor", "mockEvent": {}}}
 ```
 
+## Wallet & Commerce (SKALE BITE V2)
+
+When AGENT_PRIVATE_KEY is set, wallet tools operate on SKALE BITE V2 Sandbox (gasless).
+
+### wallet_balance
+Check USDC balance. On SKALE: shows USDC + sFUEL + spending budget.
+```json
+{"tool": "wallet_balance", "args": {}}
+```
+
+### wallet_pay
+Send USDC to an address. On SKALE: gasless transfer.
+```json
+{"tool": "wallet_pay", "args": {"to": "0x...", "amount": "1.00"}}
+```
+
+### commerce_status
+Full commerce dashboard: balance, spending limits, audit trail.
+```json
+{"tool": "commerce_status", "args": {}}
+```
+
+### x402_pay_and_fetch
+Access paid APIs via x402 protocol. Auto-handles HTTP 402 payment challenges.
+```json
+{"tool": "x402_pay_and_fetch", "args": {"url": "https://api.example.com/data", "method": "GET"}}
+```
+
+### defi_swap
+Execute a token swap on SKALE DEX with risk controls.
+```json
+{"tool": "defi_swap", "args": {"tokenIn": "USDC", "tokenOut": "WETH", "amountIn": "10.00"}}
+```
+
+### bite_encrypt_payment
+Create conditional encrypted payment using BITE v2 threshold encryption.
+```json
+{"tool": "bite_encrypt_payment", "args": {"amount": "5.00", "recipient": "0x...", "condition": "delivery_confirmed"}}
+```
+
+### ap2_purchase
+Execute AP2 purchase flow (intent -> cart -> payment -> receipt).
+```json
+{"tool": "ap2_purchase", "args": {"merchantUrl": "https://merchant.example.com", "item": "API credits"}}
+```
+
+### deploy_erc8004
+Deploy ERC-8004 identity contracts on SKALE. Gasless.
+```json
+{"tool": "deploy_erc8004", "args": {"register_agent": true}}
+```
+
 ## Document Generation (LaTeX → PDF)
 
 ### document_create

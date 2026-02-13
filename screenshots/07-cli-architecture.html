@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispy - CLI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Instrument Sans', -apple-system, sans-serif; background: linear-gradient(180deg, #76CCEE 23%, #BAE3FF 100%); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 40px; }
+    .card { width: 780px; background: #fff; border-radius: 24px; padding: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 4px 20px rgba(0,0,0,0.08); }
+
+    /* Windows Terminal chrome */
+    .terminal { border-radius: 12px; overflow: hidden; }
+    .titlebar { background: #202020; height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0; user-select: none; }
+    .titlebar-left { display: flex; align-items: center; height: 100%; }
+    .tab { display: flex; align-items: center; gap: 8px; padding: 0 14px; height: 100%; background: #0c0c0c; color: #ccc; font-size: 12px; font-family: 'Segoe UI', -apple-system, sans-serif; border-top: 2px solid #0078d4; }
+    .tab-icon { flex-shrink: 0; }
+    .new-tab { color: #666; font-size: 18px; padding: 0 10px; font-family: 'Segoe UI', sans-serif; }
+    .titlebar-right { display: flex; align-items: center; height: 100%; }
+    .win-btn { width: 46px; height: 34px; display: flex; align-items: center; justify-content: center; color: #999; }
+    .win-btn:hover { background: #333; }
+    .win-btn.close:hover { background: #c42b1c; color: #fff; }
+
+    /* Terminal body */
+    .body { background: #0c0c0c; padding: 12px 20px 16px; font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 12.5px; line-height: 1.5; color: #cccccc; overflow: hidden; }
+
+    /* Colors */
+    .path { color: #616161; }
+    .cmd { color: #e8e6e3; }
+    .cyan { color: #8ACFEA; }
+    .white { color: #f2f2f2; font-weight: 600; }
+    .green { color: #4ade80; }
+    .yellow { color: #facc15; }
+    .orange { color: #fb923c; }
+    .dim { color: #555; }
+    .dim2 { color: #444; }
+    .muted { color: #777; }
+    .pink { color: #f472b6; }
+    .purple { color: #a78bfa; }
+    .red { color: #f87171; }
+
+    pre { font-family: inherit; font-size: inherit; line-height: 1.25; }
+
+    .tips { font-size: 11.5px; line-height: 1.65; }
+    .divider-line { color: #333; overflow: hidden; white-space: nowrap; margin: 5px 0; letter-spacing: -0.5px; }
+
+    /* Session content */
+    .user-input { margin: 6px 0 2px; }
+    .marathon-header { margin: 6px 0 4px; }
+    .think-line { color: #555; font-style: italic; margin-bottom: 6px; font-size: 11.5px; }
+    .milestone { display: flex; align-items: baseline; gap: 0; line-height: 1.65; }
+    .ms-icon { width: 22px; flex-shrink: 0; text-align: center; }
+    .ms-label { flex: 1; min-width: 0; }
+    .ms-file { color: #555; font-size: 11px; }
+    .progress-row { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; font-size: 11.5px; }
+    .progress-bar-bg { color: #333; letter-spacing: -1px; }
+    .progress-bar-fill { color: #8ACFEA; letter-spacing: -1px; }
+    .spinner { display: inline-block; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .prompt-line { margin-top: 4px; }
+    .cursor { animation: blink 1s step-end infinite; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .label { text-align: center; color: transparent; font-size: 13px; font-weight: 600; margin-top: 16px; -webkit-text-stroke: 1px rgba(30, 58, 95, 0.55); font-family: 'Instrument Sans', sans-serif; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="terminal">
+      <!-- Title Bar -->
+      <div class="titlebar">
+        <div class="titlebar-left">
+          <div class="tab">
+            <svg class="tab-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="1" width="14" height="14" rx="2" fill="#012456"/>
+              <path d="M4.5 8.5l3-3" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M4.5 8.5l3 3" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="8" y1="12" x2="12" y2="12" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Windows PowerShell
+          </div>
+          <div class="new-tab">+</div>
+        </div>
+        <div class="titlebar-right">
+          <div class="win-btn">
+            <svg width="10" height="1"><rect width="10" height="1" fill="#999"/></svg>
+          </div>
+          <div class="win-btn">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" stroke="#999" stroke-width="1"/></svg>
+          </div>
+          <div class="win-btn close">
+            <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.2"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal Content -->
+      <div class="body">
+        <!-- Command -->
+        <div><span class="path">C:\Users\Windows&gt;</span> <span class="cmd">wispy</span></div>
+
+        <!-- Logo + Info -->
+        <pre style="margin: 8px 0 6px;">
+<span class="cyan">      &#9604;&#9608;&#9608;&#9608;&#9608;&#9604;</span>
+<span class="cyan">    &#9604;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9604;</span>
+<span class="cyan">  &#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span>   <span class="white">Wispy v1.0.0</span>
+<span class="cyan">  &#9608;&#9608;&#9608;&#9608;  &#9608;&#9608;  &#9608;&#9608;&#9608;&#9608;</span>   <span class="cyan">Gemini 2.5 Flash</span>
+<span class="cyan">  &#9608;&#9608;&#9608;&#9608;  &#9608;&#9608;  &#9608;&#9608;&#9608;&#9608;</span>   <span class="dim">C:\Users\Windows</span>
+<span class="cyan">  &#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span>
+<span class="cyan">    &#9600;&#9608;&#9608;&#9600;&#9608;&#9608;&#9600;&#9608;&#9608;&#9600;</span></pre>
+
+        <!-- Tips -->
+        <div class="tips">
+          <div><span class="dim">Tips:</span> <span class="cyan">/help</span> <span class="dim2">for commands</span> <span class="dim2">&bull;</span> <span class="cyan">/quick</span> <span class="dim2">for shortcuts</span> <span class="dim2">&bull;</span> <span class="cyan">/marathon</span> <span class="dim2">for background tasks</span></div>
+          <div><span class="dim">Just type naturally &mdash; Wispy understands:</span> <span class="muted">&quot;build me a dashboard&quot;</span><span class="dim">,</span> <span class="muted">&quot;fix the bug&quot;</span><span class="dim">, etc.</span></div>
+        </div>
+
+        <!-- Divider -->
+        <div class="divider-line">&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;</div>
+
+        <!-- User input -->
+        <div class="user-input"><span class="cyan">&#10095;</span> <span class="cmd">build me a coffee subscription website called EcoBrew, eco-friendly theme</span></div>
+
+        <!-- Marathon started -->
+        <div class="marathon-header"><span class="orange">&#9679;</span> <span class="white">Marathon started</span> <span class="dim">&mdash;</span> <span class="cyan">ecobrew-website-build</span> <span class="dim">(8 milestones)</span></div>
+
+        <!-- Thinking -->
+        <div class="think-line"><span class="purple">&#9672;</span> &quot;Next.js + Tailwind, sage green palette, fair-trade messaging, Imagen 3 for hero...&quot;</div>
+
+        <!-- Milestones -->
+        <div class="milestone"><span class="ms-icon green">&#10003;</span><span class="ms-label"><span class="green">Project scaffolded</span> <span class="ms-file">&mdash; npx create-next-app ecobrew --ts --tailwind</span></span></div>
+        <div class="milestone"><span class="ms-icon green">&#10003;</span><span class="ms-label"><span class="green">Layout &amp; navigation</span> <span class="ms-file">&mdash; layout.tsx, Navbar.tsx, globals.css</span></span></div>
+        <div class="milestone"><span class="ms-icon green">&#10003;</span><span class="ms-label"><span class="green">Hero section + Imagen 3</span> <span class="ms-file">&mdash; generated hero.webp (1920&times;1080)</span></span></div>
+        <div class="milestone"><span class="ms-icon green">&#10003;</span><span class="ms-label"><span class="green">Features &amp; about sections</span> <span class="ms-file">&mdash; page.tsx +142 lines</span></span></div>
+        <div class="milestone"><span class="ms-icon green">&#10003;</span><span class="ms-label"><span class="green">Subscription plans page</span> <span class="ms-file">&mdash; plans/page.tsx, PricingToggle.tsx</span></span></div>
+        <div class="milestone"><span class="ms-icon green">&#10003;</span><span class="ms-label"><span class="green">Contact form &amp; footer</span> <span class="ms-file">&mdash; contact/page.tsx, Footer.tsx</span></span></div>
+        <div class="milestone"><span class="ms-icon cyan">&#8635;</span><span class="ms-label"><span class="cyan">Vercel deployment</span> <span class="ms-file">&mdash; deploying to ecobrew.vercel.app...</span></span></div>
+        <div class="milestone"><span class="ms-icon dim">&#9675;</span><span class="ms-label"><span class="dim">Final review &amp; polish</span></span></div>
+
+        <!-- Progress bar -->
+        <div class="progress-row">
+          <span><span class="progress-bar-fill">&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span><span class="progress-bar-bg">&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span></span>
+          <span class="white">75%</span>
+          <span class="dim">&bull;</span>
+          <span class="muted">6m 12s</span>
+          <span class="dim">&bull;</span>
+          <span class="muted">43 tools used</span>
+        </div>
+
+        <!-- Next prompt -->
+        <div class="prompt-line"><span class="cyan">&#10095;</span> <span class="cursor cmd">&#9646;</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="label">Screenshot 7: Wispy CLI &mdash; type naturally, build anything</div>
+</body>
+</html>

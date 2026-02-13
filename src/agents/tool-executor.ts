@@ -248,6 +248,8 @@ export class ToolExecutor {
           return this.executeERC8004Feedback(tool.args);
         case "erc8004_verify":
           return this.executeERC8004Verify(tool.args);
+        case "deploy_erc8004":
+          return this.executeDeployERC8004(tool.args);
         case "a2a_discover":
           return this.executeA2ADiscover(tool.args);
         case "a2a_delegate":
@@ -1142,11 +1144,60 @@ export class ToolExecutor {
 
   private async executeWalletBalance(_args: Record<string, unknown>): Promise<ToolResult> {
     try {
+      // SKALE wallet bridge: when AGENT_PRIVATE_KEY is set, query SKALE BITE V2
+      const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
+      if (privateKey) {
+        const { createPublicClient, http, formatUnits } = await import("viem");
+        const { skaleBiteSandbox, SKALE_BITE_SANDBOX } = await import(
+          "../integrations/agentic-commerce/config.js"
+        );
+        const { privateKeyToAccount } = await import("viem/accounts");
+
+        const account = privateKeyToAccount(privateKey);
+        const publicClient = createPublicClient({
+          chain: skaleBiteSandbox,
+          transport: http(),
+        });
+
+        // Query USDC balance
+        const usdcRaw = await publicClient.readContract({
+          address: SKALE_BITE_SANDBOX.usdc as `0x${string}`,
+          abi: [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }],
+          functionName: "balanceOf",
+          args: [account.address],
+        });
+        const usdcBalance = formatUnits(usdcRaw as bigint, 6);
+
+        // Query sFUEL (native gas)
+        const sFuel = await publicClient.getBalance({ address: account.address });
+        const sFuelBalance = formatUnits(sFuel, 18);
+
+        const lines = [
+          `Network: SKALE BITE V2 Sandbox (gasless)`,
+          `Address: ${account.address}`,
+          `USDC Balance: ${usdcBalance} USDC`,
+          `sFUEL: ${sFuelBalance}`,
+          `Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/address/${account.address}`,
+        ];
+
+        // Include agentic-commerce budget if available
+        if (this.integrationRegistry) {
+          try {
+            const budget = await this.integrationRegistry.executeTool("x402_check_budget", {});
+            if (budget?.success) lines.push("", "Spending Status:", budget.output);
+          } catch { /* no budget info */ }
+        }
+
+        return { success: true, output: lines.join("\n") };
+      }
+
+      // Fallback: original Base wallet
       const { getBalance, getWalletAddress } = await import("../wallet/x402.js");
       const address = getWalletAddress(this.runtimeDir);
       if (!address) return { success: false, output: "", error: "Wallet not initialized" };
       const balance = await getBalance(this.runtimeDir);
-      return { success: true, output: `Address: ${address}\nUSDC Balance: ${balance}` };
+      const { addressLink } = await import("../wallet/explorer.js");
+      return { success: true, output: `Address: ${address}\nUSDC Balance: ${balance}\nExplorer: ${addressLink(address)}` };
     } catch (err: any) {
       return { success: false, output: "", error: err.message };
     }
@@ -1157,7 +1208,56 @@ export class ToolExecutor {
     const amount = String(args.amount || "");
     if (!to || !amount) return { success: false, output: "", error: "to and amount required" };
 
-    // Get X402 client
+    // SKALE wallet bridge: when AGENT_PRIVATE_KEY is set, transfer on SKALE
+    const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
+    if (privateKey) {
+      try {
+        // Request approval first
+        const approved = await requestApproval("wallet_pay", `Send ${amount} USDC to ${to} on SKALE`, args);
+        if (!approved) return { success: false, output: "", error: "Payment not approved" };
+
+        const { createPublicClient, createWalletClient, http, parseUnits } = await import("viem");
+        const { skaleBiteSandbox, SKALE_BITE_SANDBOX } = await import(
+          "../integrations/agentic-commerce/config.js"
+        );
+        const { privateKeyToAccount } = await import("viem/accounts");
+
+        const account = privateKeyToAccount(privateKey);
+        const walletClient = createWalletClient({
+          account,
+          chain: skaleBiteSandbox,
+          transport: http(),
+        });
+        const publicClient = createPublicClient({
+          chain: skaleBiteSandbox,
+          transport: http(),
+        });
+
+        const hash = await walletClient.writeContract({
+          address: SKALE_BITE_SANDBOX.usdc as `0x${string}`,
+          abi: [{ name: "transfer", type: "function", stateMutability: "nonpayable", inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] }],
+          functionName: "transfer",
+          args: [to as `0x${string}`, parseUnits(amount, 6)],
+        });
+
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+        return {
+          success: true,
+          output: [
+            `Sent ${amount} USDC to ${to}`,
+            `Network: SKALE BITE V2 (gasless)`,
+            `Tx: ${hash}`,
+            `Status: ${receipt.status === "success" ? "confirmed" : "failed"}`,
+            `Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${hash}`,
+          ].join("\n"),
+        };
+      } catch (err: any) {
+        return { success: false, output: "", error: `SKALE transfer failed: ${err.message}` };
+      }
+    }
+
+    // Fallback: original Base wallet
     const { getX402Client } = await import("../wallet/x402-client.js");
     const client = getX402Client();
     if (!client) return { success: false, output: "", error: "Wallet not initialized. Run /wallet first." };
@@ -1175,9 +1275,11 @@ export class ToolExecutor {
           amount, currency: "USDC", recipient: to, network: "base",
         });
         if (result.success) commerce.recordPayment(to, parseFloat(amount), result.txHash!);
-        return result.success
-          ? { success: true, output: `Sent ${amount} USDC to ${to}\nTx: ${result.txHash}` }
-          : { success: false, output: "", error: result.error || "Transaction failed" };
+        if (result.success) {
+          const { txLink } = await import("../wallet/explorer.js");
+          return { success: true, output: `Sent ${amount} USDC to ${to}\nTx: ${result.txHash}\nExplorer: ${txLink(result.txHash!)}` };
+        }
+        return { success: false, output: "", error: result.error || "Transaction failed" };
       }
     }
 
@@ -1194,12 +1296,66 @@ export class ToolExecutor {
       commerce.recordPayment(to, parseFloat(amount), result.txHash!);
     }
 
-    return result.success
-      ? { success: true, output: `Sent ${amount} USDC to ${to}\nTx: ${result.txHash}` }
-      : { success: false, output: "", error: result.error || "Transaction failed" };
+    if (result.success) {
+      const { txLink } = await import("../wallet/explorer.js");
+      return { success: true, output: `Sent ${amount} USDC to ${to}\nTx: ${result.txHash}\nExplorer: ${txLink(result.txHash!)}` };
+    }
+    return { success: false, output: "", error: result.error || "Transaction failed" };
   }
 
   private async executeCommerceStatus(): Promise<ToolResult> {
+    // SKALE wallet bridge: when AGENT_PRIVATE_KEY is set, show SKALE status
+    const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
+    if (privateKey) {
+      try {
+        const { createPublicClient, http, formatUnits } = await import("viem");
+        const { skaleBiteSandbox, SKALE_BITE_SANDBOX } = await import(
+          "../integrations/agentic-commerce/config.js"
+        );
+        const { privateKeyToAccount } = await import("viem/accounts");
+
+        const account = privateKeyToAccount(privateKey);
+        const publicClient = createPublicClient({
+          chain: skaleBiteSandbox,
+          transport: http(),
+        });
+
+        const usdcRaw = await publicClient.readContract({
+          address: SKALE_BITE_SANDBOX.usdc as `0x${string}`,
+          abi: [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }],
+          functionName: "balanceOf",
+          args: [account.address],
+        });
+        const usdcBalance = formatUnits(usdcRaw as bigint, 6);
+
+        const lines = [
+          "Commerce Status (SKALE BITE V2):",
+          `  Network:   SKALE BITE V2 Sandbox (gasless)`,
+          `  Wallet:    ${account.address}`,
+          `  USDC:      ${usdcBalance} USDC`,
+          `  Explorer:  ${SKALE_BITE_SANDBOX.explorerUrl}/address/${account.address}`,
+        ];
+
+        // Include integration budget/audit data
+        if (this.integrationRegistry) {
+          try {
+            const budget = await this.integrationRegistry.executeTool("x402_check_budget", {});
+            if (budget?.success) lines.push("", "Budget Status:", budget.output);
+          } catch { /* no budget */ }
+
+          try {
+            const audit = await this.integrationRegistry.executeTool("x402_audit_trail", {});
+            if (audit?.success) lines.push("", "Audit Trail:", audit.output);
+          } catch { /* no audit */ }
+        }
+
+        return { success: true, output: lines.join("\n") };
+      } catch (err: any) {
+        return { success: false, output: "", error: `SKALE status failed: ${err.message}` };
+      }
+    }
+
+    // Fallback: original Base commerce engine
     const { getCommerceEngine } = await import("../wallet/commerce.js");
     const commerce = getCommerceEngine();
     if (!commerce) return { success: false, output: "", error: "Commerce engine not initialized" };
@@ -1220,13 +1376,63 @@ export class ToolExecutor {
     ];
 
     if (status.recentPayments.length > 0) {
+      const { txLink } = await import("../wallet/explorer.js");
       lines.push("", "Recent Payments:");
       for (const p of status.recentPayments) {
-        lines.push(`  $${p.amount} -> ${p.to.slice(0, 10)}... (${p.txHash.slice(0, 14)}...)`);
+        lines.push(`  $${p.amount} -> ${p.to.slice(0, 10)}... [View Tx](${txLink(p.txHash)})`);
       }
     }
 
     return { success: true, output: lines.join("\n") };
+  }
+
+  private async executeDeployERC8004(args: Record<string, unknown>): Promise<ToolResult> {
+    const privateKey = process.env.AGENT_PRIVATE_KEY;
+    if (!privateKey) {
+      return { success: false, output: "", error: "AGENT_PRIVATE_KEY required for ERC-8004 deployment" };
+    }
+
+    const approved = await requestApproval("deploy_erc8004", "Deploy ERC-8004 identity contracts on SKALE", args);
+    if (!approved) return { success: false, output: "", error: "Deployment not approved" };
+
+    try {
+      const { deployERC8004 } = await import(
+        "../integrations/agentic-commerce/deploy/deploy-erc8004.js"
+      );
+      const registerAgent = args.register_agent !== false;
+      const agentUri = args.agent_uri as string | undefined;
+
+      const result = await deployERC8004(privateKey as `0x${string}`, {
+        registerAgent,
+        agentURI: agentUri,
+      });
+
+      const { SKALE_BITE_SANDBOX } = await import(
+        "../integrations/agentic-commerce/config.js"
+      );
+
+      const lines = [
+        "ERC-8004 Contracts Deployed on SKALE BITE V2 (gasless):",
+        "",
+        `Factory:            ${result.factory}`,
+        `IdentityRegistry:   ${result.identityRegistry}`,
+        `ReputationRegistry: ${result.reputationRegistry}`,
+        `ValidationRegistry: ${result.validationRegistry}`,
+      ];
+
+      if (result.agentId) {
+        lines.push("", `Agent Registered: ID ${result.agentId}`);
+      }
+
+      lines.push(
+        "",
+        `Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/address/${result.factory}`,
+      );
+
+      return { success: true, output: lines.join("\n") };
+    } catch (err: any) {
+      return { success: false, output: "", error: `ERC-8004 deployment failed: ${err.message}` };
+    }
   }
 
   private executeListDirectory(args: Record<string, unknown>): ToolResult {

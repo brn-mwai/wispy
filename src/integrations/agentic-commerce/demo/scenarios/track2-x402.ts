@@ -55,9 +55,9 @@ export async function runTrack2(privateKey?: string): Promise<string> {
     log(`[x402 Call 1] Weather API → $0.001`);
     log(`  Budget check: $0.000 spent / $0.010 limit → OK`);
     const r1 = await buyer.payAndFetch(`${urls.weather}?city=Lagos`, undefined, "Weather data for Lagos");
-    const d1 = await r1.json();
-    log(`  HTTP 402 → Sign EIP-3009 → Pay via Kobaru → 200 OK`);
-    log(`  Data: ${d1.city} ${d1.temperature}°C ${d1.condition}`);
+    const d1 = await r1.json().catch(() => ({})) as Record<string, unknown>;
+    log(`  HTTP 402 → Sign EIP-3009 → Pay via Kobaru → ${r1.status}`);
+    log(`  Data: ${d1.city ?? "Lagos"} ${d1.temperature ?? "N/A"}°C ${d1.condition ?? "N/A"}`);
     log(``);
 
     // Call 2
@@ -72,9 +72,9 @@ export async function runTrack2(privateKey?: string): Promise<string> {
       },
       "Market sentiment analysis",
     );
-    const d2 = await r2.json();
-    log(`  HTTP 402 → Sign EIP-3009 → Pay via Kobaru → 200 OK`);
-    log(`  Data: ${d2.sentiment} (score: ${d2.score})`);
+    const d2 = await r2.json().catch(() => ({})) as Record<string, unknown>;
+    log(`  HTTP 402 → Sign EIP-3009 → Pay via Kobaru → ${r2.status}`);
+    log(`  Data: ${d2.sentiment ?? "N/A"} (score: ${d2.score ?? "N/A"})`);
     log(``);
 
     // Call 3
@@ -89,9 +89,9 @@ export async function runTrack2(privateKey?: string): Promise<string> {
       },
       "Compile data into report",
     );
-    const d3 = await r3.json();
-    log(`  HTTP 402 → Sign EIP-3009 → Pay via Kobaru → 200 OK`);
-    log(`  Data: "${d3.title}"`);
+    const d3 = await r3.json().catch(() => ({})) as Record<string, unknown>;
+    log(`  HTTP 402 → Sign EIP-3009 → Pay via Kobaru → ${r3.status}`);
+    log(`  Data: "${d3.title ?? "Report generated"}"`);
     log(``);
 
     // Spend summary per tool call

@@ -6,9 +6,11 @@
  */
 
 import chalk from "chalk";
+import gradient from "gradient-string";
 import { Marked } from "marked";
-import markedTerminal from "marked-terminal";
-import { t } from "../ui/theme.js";
+import * as _mt from "marked-terminal";
+const markedTerminal = (_mt as any).markedTerminal ?? (_mt as any).default;
+import { getTheme, t } from "../ui/theme.js";
 
 // ── Markdown renderer ────────────────────────────────────────────
 
@@ -155,36 +157,76 @@ export class OutputRenderer {
   }
 
   /**
-   * Render a full-width dim separator line.
+   * Render a gradient-colored separator line.
    */
   renderSeparator(): void {
-    const width = process.stdout.columns || 80;
-    console.log(chalk.dim("─".repeat(width)));
+    const width = Math.min(process.stdout.columns || 80, 120);
+    const theme = getTheme();
+    const g = gradient(theme.gradientAccent);
+    console.log(g("\u2500".repeat(width)));
   }
 
   /**
-   * Render response stats — one compact line.
+   * Render a heavy gradient separator for major sections.
+   */
+  renderHeavySeparator(): void {
+    const width = Math.min(process.stdout.columns || 80, 120);
+    const theme = getTheme();
+    const g = gradient(theme.gradient);
+    console.log(g("\u2501".repeat(width)));
+  }
+
+  /**
+   * Render response stats as a right-aligned hints bar.
    *
    * Format:
-   *   2.5 Pro · 1,234 tokens · $0.02 · 12% context · 3.2s [plan]
+   *  ctrl+c cancel                  2.5 Pro · 234 tk · $0.0012 · ██░░░░░░░░ 2% · 3.2s · [Vertex]
    */
   renderStats(stats: ResponseStats): void {
-    const parts = [
+    const cols = process.stdout.columns || 80;
+    const left = " ctrl+c cancel";
+
+    // Mini context progress bar (plain text for length calc)
+    const barWidth = 10;
+    const filled = Math.min(barWidth, Math.round((stats.contextPercent / 100) * barWidth));
+    const empty = barWidth - filled;
+    const barPlain = "\u2588".repeat(filled) + "\u2591".repeat(empty);
+
+    const rightParts = [
       stats.model,
-      `${stats.tokens.toLocaleString()} tokens`,
+      `${stats.tokens.toLocaleString()} tk`,
       `$${stats.cost.toFixed(4)}`,
-      `${stats.contextPercent}% context`,
+      `${barPlain} ${stats.contextPercent}%`,
       `${stats.elapsed}s`,
     ];
 
     if (stats.mode && stats.mode !== "chat") {
-      parts.push(chalk.yellow(`[${stats.mode}]`));
+      rightParts.push(`[${stats.mode}]`);
     }
     if (stats.backend) {
-      parts.push(chalk.green(`[${stats.backend}]`));
+      rightParts.push(`[${stats.backend}]`);
     }
 
-    console.log();
-    console.log(chalk.dim(`  ${parts.join(" · ")}`));
+    const rightPlain = rightParts.join(" \u00b7 ");
+    const gap = Math.max(1, cols - left.length - rightPlain.length);
+
+    // Build colored version
+    const barColored = chalk.green("\u2588".repeat(filled)) + chalk.dim("\u2591".repeat(empty));
+    const coloredParts = [
+      stats.model,
+      `${stats.tokens.toLocaleString()} tk`,
+      `$${stats.cost.toFixed(4)}`,
+      `${barColored} ${stats.contextPercent}%`,
+      `${stats.elapsed}s`,
+    ];
+
+    if (stats.mode && stats.mode !== "chat") {
+      coloredParts.push(chalk.yellow(`[${stats.mode}]`));
+    }
+    if (stats.backend) {
+      coloredParts.push(chalk.green(`[${stats.backend}]`));
+    }
+
+    console.log(chalk.dim(left) + " ".repeat(gap) + chalk.dim(coloredParts.join(" \u00b7 ")));
   }
 }

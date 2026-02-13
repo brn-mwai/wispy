@@ -89,16 +89,11 @@ export class IntegrationRegistry {
       throw new Error(`Integration not found: ${id}`);
     }
 
-    // Check auth requirements
-    if (reg.manifest.auth.type !== "none") {
-      if (!this.credentialManager.has(id)) {
-        reg.status = "auth-required";
-        log.info("Integration %s requires authentication", id);
-        return;
-      }
-    }
+    // Check env var requirements first (env vars can satisfy auth)
+    const envSatisfied = reg.manifest.requires?.env?.length
+      ? reg.manifest.requires.env.every((v: string) => !!process.env[v])
+      : false;
 
-    // Check env var requirements
     if (reg.manifest.requires?.env) {
       for (const envVar of reg.manifest.requires.env) {
         if (!process.env[envVar]) {
@@ -107,6 +102,15 @@ export class IntegrationRegistry {
           log.warn("Integration %s missing env: %s", id, envVar);
           return;
         }
+      }
+    }
+
+    // Check auth requirements (skip if env vars already satisfy auth)
+    if (reg.manifest.auth.type !== "none" && !envSatisfied) {
+      if (!this.credentialManager.has(id)) {
+        reg.status = "auth-required";
+        log.info("Integration %s requires authentication", id);
+        return;
       }
     }
 

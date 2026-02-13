@@ -613,7 +613,9 @@ export class DeFiAgent {
 
     for (let i = 0; i < this.tradeResults.length; i++) {
       const r = this.tradeResults[i];
-      const hash = r.txHash ? `\`${r.txHash.slice(0, 12)}...\`` : "N/A";
+      const hash = r.txHash
+        ? `[\`${r.txHash.slice(0, 12)}...\`](${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.txHash})`
+        : "N/A";
       lines.push(
         `| ${i + 1} | ${r.fromToken} | ${r.toToken} | $${r.amountIn} | ${r.amountOut ?? "N/A"} | ${r.method} | ${hash} | ${r.success ? "OK" : "FAILED"} |`,
       );

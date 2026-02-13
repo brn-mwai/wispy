@@ -509,7 +509,7 @@ export function initGemini(apiKeyOrOptions: string | GeminiInitOptions): GoogleG
       vertexai: true,
       project: apiKeyOrOptions.project,
       location: apiKeyOrOptions.location || "us-central1",
-    } as any);
+    });
     log.info("Gemini SDK initialized with Vertex AI (project: %s, location: %s)",
       apiKeyOrOptions.project, apiKeyOrOptions.location || "us-central1");
   } else if (apiKeyOrOptions.apiKey) {
@@ -638,12 +638,14 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     // Gemini 3 uses thinking_level instead of thinking_budget
     const isGemini3 = opts.model.includes("gemini-3");
     if (isGemini3) {
-      // Gemini 3 thinking levels: minimal (flash only), low, medium (flash only), high
       config.thinkingConfig = { thinkingLevel: thinkingLevelForGemini3(opts.thinkingLevel) };
     } else {
-      // Legacy: Gemini 2.x uses thinking_budget
+      // Gemini 2.x uses thinking_budget (token count)
       config.thinkingConfig = { thinkingBudget: thinkingBudget(opts.thinkingLevel) };
     }
+  } else if (!opts.thinkingLevel && opts.model.includes("gemini-3")) {
+    // Gemini 3: enable deep thinking by default (HIGH) for best reasoning
+    config.thinkingConfig = { thinkingLevel: "HIGH" };
   }
 
   // Only use native tools for supported models
@@ -1109,7 +1111,7 @@ function thinkingBudget(level: ThinkingLevel): number {
     case "low": return 1024;
     case "medium": return 4096;
     case "high": return 16384;
-    case "ultra": return 24576; // Maximum allowed by Vertex AI
+    case "ultra": return 32768; // Maximum allowed (Gemini 2.5 Pro supports up to 32768)
     default: return 0;
   }
 }
@@ -1120,13 +1122,14 @@ function thinkingBudget(level: ThinkingLevel): number {
  * Note: "ultra" maps to "high" as it's the maximum available in Gemini 3
  */
 function thinkingLevelForGemini3(level: ThinkingLevel): string {
+  // Gemini 3 API expects uppercase: "LOW", "MEDIUM" (Flash only), "HIGH"
   switch (level) {
-    case "minimal": return "low";      // minimal not available on pro, use low
-    case "low": return "low";
-    case "medium": return "high";      // medium not available on pro, use high
-    case "high": return "high";
-    case "ultra": return "high";       // ultra = max reasoning = high
-    default: return "high";
+    case "minimal": return "LOW";
+    case "low": return "LOW";
+    case "medium": return "MEDIUM";    // Works on Flash; Pro treats as HIGH
+    case "high": return "HIGH";
+    case "ultra": return "HIGH";       // Maximum reasoning depth
+    default: return "HIGH";
   }
 }
 
@@ -1138,7 +1141,7 @@ export async function generateWithThinking(
   prompt: string,
   thinkingLevel: ThinkingLevel,
   apiKeyOrOptions: string | GeminiInitOptions,
-  model: string = "gemini-2.5-flash"
+  model: string = "gemini-3-flash-preview"
 ): Promise<string> {
   // Initialize client if needed
   if (!client) {

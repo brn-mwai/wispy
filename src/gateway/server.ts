@@ -107,7 +107,7 @@ export async function startGateway(opts: GatewayOpts) {
       credentialManager: credMgr,
       logger: log,
     };
-    const integrationRegistry = await loadIntegrations(integrationCtx);
+    const integrationRegistry = await loadIntegrations(integrationCtx, config.integrations ?? []);
     agent.setIntegrationRegistry(integrationRegistry);
     log.info("Loaded %d integration(s), %d enabled", integrationRegistry.size, integrationRegistry.enabledCount);
   } catch (err) {

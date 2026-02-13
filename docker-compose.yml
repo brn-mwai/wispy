@@ -1,0 +1,23 @@
+# Wispy AI Agent - Local Docker Compose
+#
+# Quick start:
+#   cp .env.example .env
+#   # Add your GEMINI_API_KEY to .env
+#   docker compose up
+#
+# Access the gateway API at http://localhost:3000
+
+services:
+  wispy:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      # Persist agent runtime data (memory, sessions, cron)
+      - wispy-data:/app/wispy/runtime
+    restart: unless-stopped
+
+volumes:
+  wispy-data:

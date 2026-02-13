@@ -291,9 +291,7 @@ export default class AgenticCommerceIntegration extends Integration {
     this.defiAgent = new DeFiAgent(privateKey, this.riskEngine, this.tracker);
     this.encryptedCommerce = new EncryptedCommerce(undefined, privateKey);
 
-    console.log(
-      `[agentic-commerce] Enabled. Wallet: ${this.buyer.address}`,
-    );
+    // Logged silently — /commerce shows status
   }
 
   async onDisable(): Promise<void> {

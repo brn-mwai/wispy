@@ -45,6 +45,16 @@ export async function loadIntegrations(
     }
   }
 
+  // Auto-enable agentic-commerce when AGENT_PRIVATE_KEY is detected
+  if (process.env.AGENT_PRIVATE_KEY && !enabledIds.includes("agentic-commerce")) {
+    try {
+      await registry.enable("agentic-commerce");
+      log.info("Auto-enabled agentic-commerce (AGENT_PRIVATE_KEY detected)");
+    } catch (err) {
+      log.warn("Failed to auto-enable agentic-commerce: %s", err);
+    }
+  }
+
   if (registry.enabledCount > 0) {
     log.info("Enabled %d integration(s)", registry.enabledCount);
   }

@@ -169,3 +169,13 @@ export function atomicToUsdc(atomic: string | number): number {
 export function usdcToAtomic(usdc: number): string {
   return Math.round(usdc * 1_000_000).toString();
 }
+
+/** Format a SKALE explorer link for a transaction hash */
+export function explorerTxLink(txHash: string): string {
+  return `${SKALE_BITE_SANDBOX.explorerUrl}/tx/${txHash}`;
+}
+
+/** Format a SKALE explorer link for an address */
+export function explorerAddressLink(address: string): string {
+  return `${SKALE_BITE_SANDBOX.explorerUrl}/address/${address}`;
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispy - Imagen 3 Generation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Instrument Sans', -apple-system, sans-serif; background: linear-gradient(180deg, #76CCEE 23%, #BAE3FF 100%); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 40px; }
+    .card { width: 740px; background: #fff; border-radius: 24px; padding: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 4px 20px rgba(0,0,0,0.08); }
+    .tg { display: flex; height: 480px; border-radius: 16px; overflow: hidden; border: 1px solid #e0e0e0; }
+    .sb { width: 240px; background: #fff; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sb-hd { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #f0f0f0; }
+    .sb-search { flex: 1; background: #f3f4f6; border-radius: 20px; padding: 8px 14px; font-size: 13px; color: #9ca3af; }
+    .ci { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+    .ci.active { background: #3390EC; }
+    .ci-av { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ci-av.wispy { background: linear-gradient(to bottom, #8ACFEA, #FAFDFF); }
+    .ci-av.saved { background: #7B68EE; }
+    .ci-info { flex: 1; min-width: 0; }
+    .ci-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+    .ci.active .ci-name { color: #fff; font-weight: 600; font-size: 14px; }
+    .ci.active .ci-time { color: rgba(255,255,255,0.7); font-size: 12px; }
+    .ci.active .ci-prev { color: rgba(255,255,255,0.7); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ci:not(.active) .ci-name { color: #111827; font-weight: 600; font-size: 14px; }
+    .ci:not(.active) .ci-time { color: #9ca3af; font-size: 12px; }
+    .ci:not(.active) .ci-prev { color: #9ca3af; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ca { flex: 1; display: flex; flex-direction: column; background: #E5E5E5; }
+    .ch { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #fff; border-bottom: 1px solid #e5e7eb; }
+    .ch-left { display: flex; align-items: center; gap: 10px; }
+    .ch-av { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(to bottom, #8ACFEA, #FAFDFF); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ch-name { font-weight: 600; color: #111827; font-size: 14px; }
+    .ch-status { color: #9ca3af; font-size: 12px; }
+    .ch-actions { display: flex; align-items: center; gap: 16px; color: #9ca3af; }
+    .msgs { flex: 1; padding: 12px 14px; overflow: hidden; display: flex; flex-direction: column; gap: 6px; }
+    .mr { display: flex; }
+    .mr.u { justify-content: flex-end; }
+    .mr.b { justify-content: flex-start; }
+    .bb { max-width: 78%; padding: 8px 12px; font-size: 13px; line-height: 1.5; }
+    .bb.u { background: #EEFFDE; color: #1f2937; border-radius: 14px 14px 4px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+    .bb.b { background: #fff; color: #374151; border-radius: 14px 14px 14px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+    .mm { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-top: 4px; }
+    .mt { font-size: 11px; color: #9ca3af; }
+    .ib { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #fff; border-top: 1px solid #e5e7eb; }
+    .ib-field { flex: 1; font-size: 14px; color: #9ca3af; }
+    .img-preview { width: 100%; height: 140px; border-radius: 8px; margin-top: 6px; position: relative; overflow: hidden; }
+    .img-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .img-label { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.6); color: white; padding: 3px 8px; border-radius: 4px; font-size: 10px; }
+    .action-btns { display: flex; gap: 6px; margin-top: 8px; }
+    .action-btn { padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 500; }
+    .btn-green { background: #16a34a; color: #fff; }
+    .btn-light { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+    .spinner { width: 11px; height: 11px; border: 2px solid #bfdbfe; border-top-color: #3390EC; border-radius: 50%; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 4px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .label { text-align: center; color: transparent; font-size: 13px; font-weight: 600; margin-top: 16px; -webkit-text-stroke: 1px rgba(30, 58, 95, 0.55); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="tg">
+      <!-- Sidebar -->
+      <div class="sb">
+        <div class="sb-hd">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <div class="sb-search">Search</div>
+        </div>
+        <div class="ci active">
+          <div class="ci-av wispy"><svg width="28" height="24" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+          <div class="ci-info">
+            <div class="ci-top"><span class="ci-name">Wispy</span><span class="ci-time">13:45</span></div>
+            <p class="ci-prev">Image generated!</p>
+          </div>
+        </div>
+        <div class="ci">
+          <div class="ci-av saved"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5l-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="ci-info">
+            <div class="ci-top"><span class="ci-name">Saved Messages</span></div>
+            <p class="ci-prev">No messages</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Area -->
+      <div class="ca">
+        <div class="ch">
+          <div class="ch-left">
+            <div class="ch-av"><svg width="22" height="18" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+            <div><div class="ch-name">Wispy</div><div class="ch-status">bot</div></div>
+          </div>
+          <div class="ch-actions">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </div>
+        </div>
+
+        <div class="msgs">
+          <!-- Bot: Generating -->
+          <div class="mr b">
+            <div class="bb b">
+              <p style="color:#0369a1; font-size:12px; margin-bottom:4px;"><span class="spinner"></span> Imagen 3 generating...</p>
+              <p><strong>Creating hero image...</strong></p>
+              <p style="color:#6b7280; font-size:12px; font-style:italic; margin-top:4px; background:#f9fafb; padding:6px 8px; border-radius:6px; border:1px solid #f0f0f0;"><span style="color:#0369a1; font-style:normal; font-weight:500;">Prompt:</span> &quot;Artisan coffee beans cascading into a burlap sack, sage green and warm brown palette, soft morning light, 16:9&quot;</p>
+              <div class="mm"><span class="mt">13:44</span></div>
+            </div>
+          </div>
+
+          <!-- Bot: Generated image -->
+          <div class="mr b">
+            <div class="bb b" style="max-width:72%; padding:6px;">
+              <div class="img-preview">
+                <img src="https://images.pexels.com/photos/2131905/pexels-photo-2131905.jpeg?auto=compress&cs=tinysrgb&w=800" alt="Artisan coffee beans">
+                <span class="img-label">AI-Generated</span>
+              </div>
+              <div style="padding:6px 6px 2px;">
+                <p style="color:#6b7280; font-size:11.5px;">1920&times;1080 &middot; WebP &middot; <span style="color:#0369a1; font-family:'JetBrains Mono',monospace; font-size:10.5px;">/assets/hero.webp</span></p>
+                <div class="mm"><span class="mt">13:45</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bot: Action buttons -->
+          <div class="mr b">
+            <div class="bb b">
+              <p style="color:#6b7280; font-size:12.5px; margin-bottom:6px;">Does this hero image work for your brand?</p>
+              <div class="action-btns">
+                <div class="action-btn btn-green">Perfect!</div>
+                <div class="action-btn btn-light">Regenerate</div>
+                <div class="action-btn btn-light">Edit</div>
+              </div>
+              <div class="mm"><span class="mt">13:45</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ib">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          <div class="ib-field">Write a message...</div>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="label">Screenshot 3: Imagen 3 generates custom hero images in real-time</div>
+</body>
+</html>

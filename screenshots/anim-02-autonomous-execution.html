@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispy - Autonomous Execution</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Instrument Sans',-apple-system,sans-serif;background:linear-gradient(180deg,#8ACFEA 0%,#c5e5f5 50%,#FAFDFF 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 40px}
+    .card{width:740px;background:#fff;border-radius:22px;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,0.10),0 2px 12px rgba(0,0,0,0.06);opacity:0;animation:fadeIn .5s ease forwards .2s}
+    .tg{display:flex;height:520px;border-radius:14px;overflow:hidden;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.08)}
+    /* Sidebar */
+    .sb{width:238px;background:#fff;border-right:.5px solid #e8e8e8;display:flex;flex-direction:column;flex-shrink:0}
+    .sb-hd{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:.5px solid #f0f0f0}
+    .sb-hd i{font-size:20px;color:#999}
+    .sb-search{flex:1;background:#f4f4f5;border-radius:18px;padding:7px 14px;font-size:13px;color:#aaa}
+    .ci{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .15s}
+    .ci.active{background:#3390EC;border-radius:0}
+    .ci-av{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .ci-av.wispy{background:linear-gradient(135deg,#8ACFEA,#FAFDFF)}
+    .ci-av.saved{background:#7B68EE}
+    .ci-av i{font-size:20px;color:#fff}
+    .ci-info{flex:1;min-width:0}
+    .ci-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}
+    .ci.active .ci-name{color:#fff;font-weight:600;font-size:13.5px}
+    .ci.active .ci-time{color:rgba(255,255,255,.6);font-size:11.5px}
+    .ci.active .ci-prev{color:rgba(255,255,255,.65);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ci:not(.active) .ci-name{color:#111;font-weight:600;font-size:13.5px}
+    .ci:not(.active) .ci-time{color:#aaa;font-size:11.5px}
+    .ci:not(.active) .ci-prev{color:#999;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    /* Chat area */
+    .ca{flex:1;display:flex;flex-direction:column;background:#E6EBF0}
+    .ch{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:#fff;border-bottom:.5px solid #e8e8e8}
+    .ch-left{display:flex;align-items:center;gap:10px}
+    .ch-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#8ACFEA,#FAFDFF);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .ch-name{font-weight:600;color:#111;font-size:13.5px}
+    .ch-status{color:#aaa;font-size:11.5px}
+    .ch-actions{display:flex;align-items:center;gap:14px;color:#aaa}
+    .ch-actions i{font-size:20px}
+    /* Messages */
+    .msgs{flex:1;padding:10px 14px;overflow:hidden;position:relative}
+    .msgs-inner{display:flex;flex-direction:column;gap:5px;animation:scrollMsgs 6s ease-in-out forwards 4s}
+    @keyframes scrollMsgs{0%{transform:translateY(0)}100%{transform:translateY(-100px)}}
+    .mr{display:flex;opacity:0}
+    .mr.u{justify-content:flex-end}
+    .mr.b{justify-content:flex-start}
+    .bb{max-width:80%;padding:7px 11px;font-size:13px;line-height:1.5;position:relative}
+    .bb.u{background:#EEFFDE;color:#1f2937;border-radius:12px 12px 4px 12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .bb.b{background:#fff;color:#374151;border-radius:12px 12px 12px 4px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .mm{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px}
+    .mt{font-size:10.5px;color:#aab}
+    /* Input bar */
+    .ib{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border-top:.5px solid #e8e8e8}
+    .ib i{font-size:22px;color:#999}
+    .ib-field{flex:1;font-size:14px;color:#aaa}
+
+    @keyframes fadeIn{to{opacity:1}}
+    .mr-1{animation:fadeIn .45s ease forwards .5s}
+    .mr-2{animation:fadeIn .45s ease forwards 1.2s}
+
+    /* Tools badge */
+    .tools-badge{display:inline-block;background:linear-gradient(135deg,#FF00E9,#8ACFEA);color:#fff;font-weight:700;padding:3px 12px;border-radius:6px;font-size:13px;animation:glowPulse 2s ease-in-out infinite}
+    @keyframes glowPulse{0%,100%{box-shadow:0 0 8px rgba(255,0,233,0.3)}50%{box-shadow:0 0 20px rgba(255,0,233,0.6)}}
+
+    /* Tool category cards */
+    .tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+    .tool-card{display:flex;align-items:center;gap:8px;background:#f9fafb;border:.5px solid #e5e7eb;border-radius:8px;padding:7px 10px;opacity:0;transform:scale(0.85)}
+    .tc-1{animation:cardPop .4s cubic-bezier(.34,1.56,.64,1) forwards 1.6s}
+    .tc-2{animation:cardPop .4s cubic-bezier(.34,1.56,.64,1) forwards 2s}
+    .tc-3{animation:cardPop .4s cubic-bezier(.34,1.56,.64,1) forwards 2.4s}
+    .tc-4{animation:cardPop .4s cubic-bezier(.34,1.56,.64,1) forwards 2.8s}
+    @keyframes cardPop{to{opacity:1;transform:scale(1)}}
+    .tc-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .tc-icon i{font-size:15px}
+    .tc-icon.blue{background:linear-gradient(135deg,#dbeafe,#bfdbfe)}
+    .tc-icon.blue i{color:#2563eb}
+    .tc-icon.green{background:linear-gradient(135deg,#dcfce7,#bbf7d0)}
+    .tc-icon.green i{color:#16a34a}
+    .tc-icon.amber{background:linear-gradient(135deg,#fef3c7,#fde68a)}
+    .tc-icon.amber i{color:#d97706}
+    .tc-icon.purple{background:linear-gradient(135deg,#ede9fe,#ddd6fe)}
+    .tc-icon.purple i{color:#7c3aed}
+    .tc-info{font-size:11.5px}
+    .tc-name{font-weight:600;color:#374151;font-size:12px}
+    .tc-desc{color:#9ca3af;font-size:10.5px}
+
+    /* LIVE badge */
+    .live-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(239,68,68,0.12);color:#ef4444;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:1px}
+    .live-dot{width:6px;height:6px;background:#ef4444;border-radius:50%;animation:livePulse 1.2s ease-in-out infinite}
+    @keyframes livePulse{0%,100%{opacity:1}50%{opacity:.3}}
+    .stream-hd{display:flex;align-items:center;justify-content:space-between;margin-top:10px;opacity:0;animation:fadeIn .4s ease forwards 3.2s}
+    .stream-label{font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1px;text-transform:uppercase}
+
+    /* Execution stream */
+    .exec-stream{background:#0f172a;border-radius:8px;padding:8px 10px;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.7;opacity:0;animation:fadeIn .3s ease forwards 3.5s}
+    .exec-line{opacity:0;transform:translateX(-8px)}
+    .el-1{animation:slideLine .3s ease forwards 3.8s}
+    .el-2{animation:slideLine .3s ease forwards 4.3s}
+    .el-3{animation:slideLine .3s ease forwards 4.8s}
+    .el-4{animation:slideLine .3s ease forwards 5.3s}
+    .el-5{animation:slideLine .3s ease forwards 5.8s}
+    @keyframes slideLine{to{opacity:1;transform:translateX(0)}}
+    .exec-ok{color:#4ade80}
+    .exec-spin{color:#facc15}
+    .exec-file{color:#8ACFEA}
+    .exec-cmd{color:#94a3b8}
+
+    /* Spinner */
+    .spinner{display:inline-block;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="tg">
+    <div class="sb">
+      <div class="sb-hd"><i class="ti ti-menu-2"></i><div class="sb-search"><i class="ti ti-search" style="font-size:14px;margin-right:6px;vertical-align:-1px"></i>Search</div></div>
+      <div class="ci active">
+        <div class="ci-av wispy"><svg width="26" height="22" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+        <div class="ci-info"><div class="ci-top"><span class="ci-name">Wispy</span><span class="ci-time">13:44</span></div><p class="ci-prev">Executing with 89 tools...</p></div>
+      </div>
+      <div class="ci">
+        <div class="ci-av saved"><i class="ti ti-bookmark" style="font-size:20px"></i></div>
+        <div class="ci-info"><div class="ci-top"><span class="ci-name">Saved Messages</span></div><p class="ci-prev">No messages</p></div>
+      </div>
+    </div>
+    <div class="ca">
+      <div class="ch">
+        <div class="ch-left">
+          <div class="ch-av"><svg width="20" height="17" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+          <div><div class="ch-name">Wispy</div><div class="ch-status">bot</div></div>
+        </div>
+        <div class="ch-actions"><i class="ti ti-search"></i><i class="ti ti-device-desktop"></i><i class="ti ti-dots-vertical"></i></div>
+      </div>
+      <div class="msgs">
+        <div class="msgs-inner">
+          <!-- Header message -->
+          <div class="mr b mr-1">
+            <div class="bb b" style="max-width:88%">
+              <p>Executing autonomously with <span class="tools-badge">89 tools</span> via native function calling</p>
+              <div class="mm"><span class="mt">13:44</span></div>
+            </div>
+          </div>
+          <!-- Tool categories + stream -->
+          <div class="mr b mr-2">
+            <div class="bb b" style="max-width:90%">
+              <div class="tool-grid">
+                <div class="tool-card tc-1">
+                  <div class="tc-icon blue"><i class="ti ti-file-code"></i></div>
+                  <div class="tc-info"><div class="tc-name">File Operations</div><div class="tc-desc">create, read, write, delete</div></div>
+                </div>
+                <div class="tool-card tc-2">
+                  <div class="tc-icon green"><i class="ti ti-terminal-2"></i></div>
+                  <div class="tc-info"><div class="tc-name">Shell Commands</div><div class="tc-desc">npm, git, build, test</div></div>
+                </div>
+                <div class="tool-card tc-3">
+                  <div class="tc-icon amber"><i class="ti ti-world"></i></div>
+                  <div class="tc-info"><div class="tc-name">Browser Automation</div><div class="tc-desc">navigate, click, screenshot</div></div>
+                </div>
+                <div class="tool-card tc-4">
+                  <div class="tc-icon purple"><i class="ti ti-sparkles"></i></div>
+                  <div class="tc-info"><div class="tc-name">Imagen 3</div><div class="tc-desc">generate, edit, upscale</div></div>
+                </div>
+              </div>
+              <!-- Stream header -->
+              <div class="stream-hd">
+                <span class="stream-label">Execution Stream</span>
+                <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+              </div>
+              <!-- Execution stream -->
+              <div class="exec-stream">
+                <div class="exec-line el-1"><span class="exec-ok">&#10003;</span> <span class="exec-cmd">writeFile:</span> <span class="exec-file">src/app/layout.tsx</span></div>
+                <div class="exec-line el-2"><span class="exec-ok">&#10003;</span> <span class="exec-cmd">shellExec:</span> <span class="exec-file">npm install prisma @prisma/client</span></div>
+                <div class="exec-line el-3"><span class="exec-ok">&#10003;</span> <span class="exec-cmd">shellExec:</span> <span class="exec-file">npx prisma generate</span></div>
+                <div class="exec-line el-4"><span class="exec-spin">&#8635;</span> <span class="exec-cmd">browserNav:</span> <span class="exec-file">localhost:3000</span></div>
+                <div class="exec-line el-5"><span class="exec-spin"><span class="spinner">&#8635;</span></span> <span class="exec-cmd">imagen3:</span> <span class="exec-file">generating hero image...</span></div>
+              </div>
+              <div class="mm"><span class="mt">13:44</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ib"><i class="ti ti-paperclip"></i><div class="ib-field">Write a message...</div><i class="ti ti-mood-smile"></i><i class="ti ti-microphone"></i></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -62,6 +62,18 @@ interface ModelSpec {
   outputCostPer1M: number;
 }
 
+/** Resolve model name to spec with fuzzy matching for preview/versioned names. */
+function resolveModelSpec(model: string): ModelSpec {
+  if (MODEL_SPECS[model]) return MODEL_SPECS[model];
+  // "gemini-2.5-pro-preview-05-06" -> "gemini-2.5-pro"
+  const base = model.replace(/-preview.*$/, "");
+  if (MODEL_SPECS[base]) return MODEL_SPECS[base];
+  // "gemini-2.5-flash-preview" -> "gemini-2.5-flash"
+  const stripped = model.replace("-preview", "");
+  if (MODEL_SPECS[stripped]) return MODEL_SPECS[stripped];
+  return MODEL_SPECS["gemini-2.5-pro"];
+}
+
 interface TokenEstimate {
   inputTokens: number;
   estimatedOutputTokens: number;
@@ -215,7 +227,7 @@ export class TokenManager {
    * Record actual token usage after a request completes.
    */
   recordUsage(model: string, inputTokens: number, outputTokens: number): void {
-    const spec = MODEL_SPECS[model] || MODEL_SPECS["gemini-2.5-pro"];
+    const spec = resolveModelSpec(model);
     const costUsd =
       (inputTokens / 1_000_000) * spec.inputCostPer1M +
       (outputTokens / 1_000_000) * spec.outputCostPer1M;
@@ -328,6 +340,11 @@ export class TokenManager {
       requestCount: this.sessionUsage.length,
       budget: this.budget,
     };
+  }
+
+  /** Get the context window size for a model (with fuzzy matching). */
+  getContextWindow(model: string): number {
+    return resolveModelSpec(model).contextWindow || 1_000_000;
   }
 
   resetSession(): void {

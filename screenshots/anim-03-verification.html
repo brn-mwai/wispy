@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispy - Verification</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Instrument Sans',-apple-system,sans-serif;background:linear-gradient(180deg,#8ACFEA 0%,#c5e5f5 50%,#FAFDFF 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 40px}
+    .card{width:740px;background:#fff;border-radius:22px;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,0.10),0 2px 12px rgba(0,0,0,0.06);opacity:0;animation:fadeIn .5s ease forwards .2s}
+    .tg{display:flex;height:520px;border-radius:14px;overflow:hidden;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.08)}
+    /* Sidebar */
+    .sb{width:238px;background:#fff;border-right:.5px solid #e8e8e8;display:flex;flex-direction:column;flex-shrink:0}
+    .sb-hd{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:.5px solid #f0f0f0}
+    .sb-hd i{font-size:20px;color:#999}
+    .sb-search{flex:1;background:#f4f4f5;border-radius:18px;padding:7px 14px;font-size:13px;color:#aaa}
+    .ci{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .15s}
+    .ci.active{background:#3390EC;border-radius:0}
+    .ci-av{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .ci-av.wispy{background:linear-gradient(135deg,#8ACFEA,#FAFDFF)}
+    .ci-av.saved{background:#7B68EE}
+    .ci-av i{font-size:20px;color:#fff}
+    .ci-info{flex:1;min-width:0}
+    .ci-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}
+    .ci.active .ci-name{color:#fff;font-weight:600;font-size:13.5px}
+    .ci.active .ci-time{color:rgba(255,255,255,.6);font-size:11.5px}
+    .ci.active .ci-prev{color:rgba(255,255,255,.65);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ci:not(.active) .ci-name{color:#111;font-weight:600;font-size:13.5px}
+    .ci:not(.active) .ci-time{color:#aaa;font-size:11.5px}
+    .ci:not(.active) .ci-prev{color:#999;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    /* Chat area */
+    .ca{flex:1;display:flex;flex-direction:column;background:#E6EBF0}
+    .ch{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:#fff;border-bottom:.5px solid #e8e8e8}
+    .ch-left{display:flex;align-items:center;gap:10px}
+    .ch-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#8ACFEA,#FAFDFF);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .ch-name{font-weight:600;color:#111;font-size:13.5px}
+    .ch-status{color:#aaa;font-size:11.5px}
+    .ch-actions{display:flex;align-items:center;gap:14px;color:#aaa}
+    .ch-actions i{font-size:20px}
+    /* Messages */
+    .msgs{flex:1;padding:10px 14px;overflow:hidden;position:relative}
+    .msgs-inner{display:flex;flex-direction:column;gap:5px;animation:scrollMsgs 6s ease-in-out forwards 5s}
+    @keyframes scrollMsgs{0%{transform:translateY(0)}100%{transform:translateY(-80px)}}
+    .mr{display:flex;opacity:0}
+    .mr.b{justify-content:flex-start}
+    .bb{max-width:80%;padding:7px 11px;font-size:13px;line-height:1.5;position:relative}
+    .bb.b{background:#fff;color:#374151;border-radius:12px 12px 12px 4px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .mm{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px}
+    .mt{font-size:10.5px;color:#aab}
+    /* Input bar */
+    .ib{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border-top:.5px solid #e8e8e8}
+    .ib i{font-size:22px;color:#999}
+    .ib-field{flex:1;font-size:14px;color:#aaa}
+
+    @keyframes fadeIn{to{opacity:1}}
+    .mr-1{animation:fadeIn .45s ease forwards .5s}
+    .mr-2{animation:fadeIn .45s ease forwards 1.8s}
+    .mr-3{animation:fadeIn .45s ease forwards 7s}
+
+    /* Milestones */
+    .ms{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12.5px;color:#16a34a}
+    .ms i{font-size:16px}
+    .ms-item{opacity:0;transform:translateX(-6px)}
+    .mi-1{animation:fadeSlide .35s ease forwards .8s}
+    .mi-2{animation:fadeSlide .35s ease forwards 1.1s}
+    .mi-3{animation:fadeSlide .35s ease forwards 1.4s}
+    @keyframes fadeSlide{to{opacity:1;transform:translateX(0)}}
+
+    /* Verification card */
+    .verify-card{background:#f0fdf4;border:.5px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-top:4px}
+    .verify-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .shield{width:24px;height:24px;background:#16a34a;border-radius:6px;display:flex;align-items:center;justify-content:center}
+    .shield i{font-size:14px;color:#fff}
+    .verify-title{font-weight:700;color:#15803d;font-size:13px}
+    .verify-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:.5px solid #dcfce7;font-size:12px;opacity:0;transform:translateY(5px)}
+    .verify-row:last-of-type{border-bottom:none}
+    .vr-1{animation:vrSlide .3s ease forwards 2.3s}
+    .vr-2{animation:vrSlide .3s ease forwards 2.8s}
+    .vr-3{animation:vrSlide .3s ease forwards 3.3s}
+    .vr-4{animation:vrSlide .3s ease forwards 3.8s}
+    .vr-5{animation:vrSlide .3s ease forwards 4.3s}
+    @keyframes vrSlide{to{opacity:1;transform:translateY(0)}}
+    .vr-label{color:#6b7280}
+    .vr-status{color:#16a34a;font-weight:600;font-family:'JetBrains Mono',monospace}
+    .all-passed{display:inline-flex;align-items:center;gap:5px;background:#16a34a;color:#fff;padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;margin-top:8px;opacity:0;transform:scale(.7);animation:pop .5s cubic-bezier(.34,1.56,.64,1) forwards 5s}
+    @keyframes pop{to{opacity:1;transform:scale(1)}}
+
+    /* Dots */
+    .dot{width:5px;height:5px;background:#FF00E9;border-radius:50%;animation:pulse 1s infinite;display:inline-block}
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+    @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="tg">
+    <div class="sb">
+      <div class="sb-hd"><i class="ti ti-menu-2"></i><div class="sb-search"><i class="ti ti-search" style="font-size:14px;margin-right:6px;vertical-align:-1px"></i>Search</div></div>
+      <div class="ci active">
+        <div class="ci-av wispy"><svg width="26" height="22" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+        <div class="ci-info"><div class="ci-top"><span class="ci-name">Wispy</span><span class="ci-time">13:46</span></div><p class="ci-prev">All checks passed</p></div>
+      </div>
+      <div class="ci">
+        <div class="ci-av saved"><i class="ti ti-bookmark" style="font-size:20px"></i></div>
+        <div class="ci-info"><div class="ci-top"><span class="ci-name">Saved Messages</span></div><p class="ci-prev">No messages</p></div>
+      </div>
+    </div>
+    <div class="ca">
+      <div class="ch">
+        <div class="ch-left">
+          <div class="ch-av"><svg width="20" height="17" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+          <div><div class="ch-name">Wispy</div><div class="ch-status">bot</div></div>
+        </div>
+        <div class="ch-actions"><i class="ti ti-search"></i><i class="ti ti-device-desktop"></i><i class="ti ti-dots-vertical"></i></div>
+      </div>
+      <div class="msgs">
+        <div class="msgs-inner">
+          <!-- Completed milestones -->
+          <div class="mr b mr-1">
+            <div class="bb b">
+              <p style="margin-bottom:5px"><strong>Milestones completed:</strong></p>
+              <div class="ms ms-item mi-1"><i class="ti ti-circle-check-filled"></i> m1: Auth system &mdash; complete</div>
+              <div class="ms ms-item mi-2"><i class="ti ti-circle-check-filled"></i> m2: Database schema &mdash; complete</div>
+              <div class="ms ms-item mi-3"><i class="ti ti-circle-check-filled"></i> m3: API endpoints &mdash; complete</div>
+              <div class="mm"><span class="mt">13:45</span></div>
+            </div>
+          </div>
+          <!-- Verification card -->
+          <div class="mr b mr-2">
+            <div class="bb b" style="max-width:88%">
+              <div class="verify-card">
+                <div class="verify-hd">
+                  <div class="shield"><i class="ti ti-shield-check"></i></div>
+                  <span class="verify-title">Verification Check &mdash; Milestone 3</span>
+                </div>
+                <div class="verify-row vr-1"><span class="vr-label">API routes respond 200</span><span class="vr-status"><i class="ti ti-check" style="font-size:13px"></i> Pass</span></div>
+                <div class="verify-row vr-2"><span class="vr-label">Auth middleware blocks unauthorized</span><span class="vr-status"><i class="ti ti-check" style="font-size:13px"></i> Pass</span></div>
+                <div class="verify-row vr-3"><span class="vr-label">Database migrations applied</span><span class="vr-status"><i class="ti ti-check" style="font-size:13px"></i> Pass</span></div>
+                <div class="verify-row vr-4"><span class="vr-label">TypeScript: 0 errors</span><span class="vr-status"><i class="ti ti-check" style="font-size:13px"></i> Pass</span></div>
+                <div class="verify-row vr-5"><span class="vr-label">Tests: 12/12 passing</span><span class="vr-status"><i class="ti ti-check" style="font-size:13px"></i> Pass</span></div>
+                <div style="text-align:center"><span class="all-passed"><i class="ti ti-check" style="font-size:14px"></i> All checks passed</span></div>
+              </div>
+              <div class="mm"><span class="mt">13:46</span></div>
+            </div>
+          </div>
+          <!-- Proceeding -->
+          <div class="mr b mr-3">
+            <div class="bb b">
+              <div style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:#888"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>Proceeding to m4: Frontend UI...</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ib"><i class="ti ti-paperclip"></i><div class="ib-field">Write a message...</div><i class="ti ti-mood-smile"></i><i class="ti ti-microphone"></i></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

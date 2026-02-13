@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispy - Gemini Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Instrument Sans',-apple-system,sans-serif;background:linear-gradient(180deg,#8ACFEA 0%,#c5e5f5 50%,#FAFDFF 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 40px}
+    .card{width:760px;background:#fff;border-radius:22px;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,0.10),0 2px 12px rgba(0,0,0,0.06);opacity:0;animation:fadeIn .5s ease forwards .2s}
+    .inner{border-radius:14px;padding:28px 28px 24px;background:#fafbfc;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06)}
+    .header{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;opacity:0;animation:fadeDown .6s ease forwards .5s}
+    .header h1{font-size:19px;font-weight:700;color:#1e3a5f}
+    .header-sub{text-align:center;font-size:12.5px;color:#9ca3af;margin-bottom:22px;opacity:0;animation:fadeIn .5s ease forwards .8s}
+    @keyframes fadeIn{to{opacity:1}}
+    @keyframes fadeDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+    /* Flow diagram */
+    .flow{display:flex;flex-direction:column;align-items:center;gap:0}
+    /* Nodes */
+    .node{border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;opacity:0;transform:translateY(10px);display:flex;align-items:center;gap:8px;position:relative}
+    .node i{font-size:16px}
+    .n-input{background:#f0f9ff;color:#0369a1;border:.5px solid rgba(3,105,161,.12);animation:nodeIn .5s ease forwards 1.2s}
+    .n-router{background:linear-gradient(135deg,#8ACFEA,#FAFDFF);color:#1e3a5f;border:.5px solid rgba(138,207,234,.3);padding:14px 20px;border-radius:50%;width:70px;height:70px;justify-content:center;animation:nodeIn .5s ease forwards 1.8s;box-shadow:0 0 16px rgba(138,207,234,.3)}
+    /* Connectors */
+    .connector{width:1px;height:20px;background:linear-gradient(180deg,#8ACFEA,#c5e5f5);opacity:0;animation:fadeIn .3s ease forwards 1.5s}
+    .connector2{width:1px;height:20px;background:linear-gradient(180deg,#c5e5f5,#8ACFEA);opacity:0;animation:fadeIn .3s ease forwards 2.1s}
+    /* Routing lines */
+    .route-lines{display:flex;justify-content:center;gap:60px;position:relative;height:24px;opacity:0;animation:fadeIn .4s ease forwards 2.3s}
+    .r-line{width:1px;height:24px}
+    .r-line.rl-1{background:linear-gradient(180deg,#8ACFEA,#FF7000)}
+    .r-line.rl-2{background:linear-gradient(180deg,#8ACFEA,#FF00E9)}
+    .r-line.rl-3{background:linear-gradient(180deg,#8ACFEA,#8ACFEA)}
+    /* Model cards */
+    .model-row{display:flex;gap:12px;justify-content:center;width:100%}
+    .model-card{border-radius:10px;padding:12px 14px;opacity:0;transform:translateY(10px);flex:1;max-width:220px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+    .mc-flash{background:#fff;border:.5px solid rgba(0,0,0,.06);animation:nodeIn .45s ease forwards 2.5s}
+    .mc-pro{background:#fff;border:.5px solid rgba(0,0,0,.06);animation:nodeIn .45s ease forwards 2.8s}
+    .mc-embed{background:#fff;border:.5px solid rgba(0,0,0,.06);animation:nodeIn .45s ease forwards 3.1s}
+    .mc-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+    .mc-flash .mc-label{color:#FF7000}
+    .mc-pro .mc-label{color:#FF00E9}
+    .mc-embed .mc-label{color:#0369a1}
+    .mc-desc{font-size:11.5px;color:#6b7280;line-height:1.4}
+    .mc-icon{font-size:22px;margin-bottom:4px}
+    .mc-flash .mc-icon{color:#FF7000}
+    .mc-pro .mc-icon{color:#FF00E9}
+    .mc-embed .mc-icon{color:#8ACFEA}
+    @keyframes nodeIn{to{opacity:1;transform:translateY(0)}}
+    /* Skills */
+    .skills-row{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+    .skill-pill{padding:5px 12px;border-radius:8px;font-size:11px;font-weight:600;opacity:0;transform:scale(.7)}
+    .sp-1{background:#fef3c7;color:#92400e;animation:pop .35s cubic-bezier(.34,1.56,.64,1) forwards 3.8s}
+    .sp-2{background:#ede9fe;color:#7c3aed;animation:pop .35s cubic-bezier(.34,1.56,.64,1) forwards 4s}
+    .sp-3{background:#dcfce7;color:#166534;animation:pop .35s cubic-bezier(.34,1.56,.64,1) forwards 4.2s}
+    .sp-4{background:#fce7f3;color:#9d174d;animation:pop .35s cubic-bezier(.34,1.56,.64,1) forwards 4.4s}
+    .sp-5{background:#e0f2fe;color:#0c4a6e;animation:pop .35s cubic-bezier(.34,1.56,.64,1) forwards 4.6s}
+    .sp-6{background:#ccfbf1;color:#0f766e;animation:pop .35s cubic-bezier(.34,1.56,.64,1) forwards 4.8s}
+    @keyframes pop{to{opacity:1;transform:scale(1)}}
+    /* Bottom */
+    .bottom-text{text-align:center;font-size:12px;color:#6b7280;margin-top:16px;opacity:0;animation:fadeIn .5s ease forwards 5.2s}
+    .bottom-text strong{color:#1e3a5f}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="inner">
+      <div class="header">
+        <svg width="30" height="25" viewBox="0 0 163 136" fill="none"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5z" fill="url(#wg7)"/><path d="M68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z" fill="#fff"/><defs><linearGradient id="wg7" x1="81" y1="0" x2="81" y2="136" gradientUnits="userSpaceOnUse"><stop stop-color="#8ACFEA"/><stop offset="1" stop-color="#FAFDFF"/></linearGradient></defs></svg>
+        <h1>Gemini Architecture</h1>
+      </div>
+      <div class="header-sub">Flash routes, Pro reasons, Embeddings remember, Skills adapt</div>
+      <div class="flow">
+        <div class="node n-input"><i class="ti ti-message-bolt"></i> User Goal Received</div>
+        <div class="connector"></div>
+        <div class="node n-router">
+          <svg width="26" height="22" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg>
+        </div>
+        <div class="connector2"></div>
+        <div class="route-lines">
+          <div class="r-line rl-1"></div>
+          <div class="r-line rl-2"></div>
+          <div class="r-line rl-3"></div>
+        </div>
+        <div class="model-row">
+          <div class="model-card mc-flash">
+            <div class="mc-icon"><i class="ti ti-bolt"></i></div>
+            <div class="mc-label">Gemini 2.5 Flash</div>
+            <div class="mc-desc">Fast routing, tool calls, quick decisions</div>
+          </div>
+          <div class="model-card mc-pro">
+            <div class="mc-icon"><i class="ti ti-brain"></i></div>
+            <div class="mc-label">Gemini 2.5 Pro</div>
+            <div class="mc-desc">Deep reasoning, architecture, complex logic</div>
+          </div>
+          <div class="model-card mc-embed">
+            <div class="mc-icon"><i class="ti ti-database"></i></div>
+            <div class="mc-label">Embeddings</div>
+            <div class="mc-desc">Memory, context retrieval, semantic search</div>
+          </div>
+        </div>
+      </div>
+      <div class="skills-row">
+        <div class="skill-pill sp-1"><i class="ti ti-code" style="font-size:12px;margin-right:3px"></i> Code Gen</div>
+        <div class="skill-pill sp-2"><i class="ti ti-photo" style="font-size:12px;margin-right:3px"></i> Imagen 3</div>
+        <div class="skill-pill sp-3"><i class="ti ti-file-text" style="font-size:12px;margin-right:3px"></i> Structured Output</div>
+        <div class="skill-pill sp-4"><i class="ti ti-shield-check" style="font-size:12px;margin-right:3px"></i> Safety Layer</div>
+        <div class="skill-pill sp-5"><i class="ti ti-tool" style="font-size:12px;margin-right:3px"></i> Function Calling</div>
+        <div class="skill-pill sp-6"><i class="ti ti-settings" style="font-size:12px;margin-right:3px"></i> System Instructions</div>
+      </div>
+      <div class="bottom-text">Every model in the Gemini family, working together</div>
+    </div>
+  </div>
+</body>
+</html>

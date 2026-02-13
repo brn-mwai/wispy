@@ -18,15 +18,40 @@ export interface PreflightResult {
 export async function runPreflight(
   privateKey?: string,
 ): Promise<PreflightResult> {
+  // Check for Gemini API key in ALL modes (required for agent reasoning)
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const hasVertexAI = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.GOOGLE_CLOUD_PROJECT);
+  const geminiWarnings: string[] = [];
+
+  if (!geminiKey && !hasVertexAI) {
+    geminiWarnings.push(
+      "GEMINI_API_KEY not set (and no Vertex AI credentials). Agent reasoning will fail.",
+    );
+  }
+
+  // Check for SKALE RPC connectivity
+  try {
+    const rpcCheck = await fetch(SKALE_BITE_SANDBOX.rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!rpcCheck.ok) geminiWarnings.push("SKALE RPC returned non-200. On-chain operations may fail.");
+  } catch {
+    geminiWarnings.push("SKALE RPC unreachable. On-chain verification will be skipped.");
+  }
+
   if (!privateKey) {
     return {
       address: "N/A (fresh key per scenario)",
       sFuelBalance: "0",
       usdcBalance: 0,
-      ready: true,
+      ready: geminiWarnings.length === 0 || !!geminiKey || hasVertexAI,
       mode: "simulation",
       warnings: [
         "No AGENT_PRIVATE_KEY set. Running in simulation mode (fresh keys, no real settlement).",
+        ...geminiWarnings,
       ],
     };
   }
@@ -49,7 +74,7 @@ export async function runPreflight(
 
   const sFuelBalance = formatEther(sFuelRaw);
   const usdcBalance = Number(usdcRaw) / 1_000_000;
-  const warnings: string[] = [];
+  const warnings: string[] = [...geminiWarnings];
 
   if (sFuelRaw === 0n)
     warnings.push("sFUEL balance is 0. Request sFUEL from @TheGreatAxios.");

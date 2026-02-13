@@ -9,6 +9,8 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { SpendTracker } from "../../x402/tracker.js";
 import { RiskEngine } from "../../defi/risk-engine.js";
 import { DeFiAgent } from "../../defi/swap.js";
+import { SKALE_BITE_SANDBOX } from "../../config.js";
+import { verifyTransactions, formatVerificationReport } from "../verify.js";
 
 export async function runTrack4(privateKey?: string): Promise<string> {
   const output: string[] = [];
@@ -65,6 +67,7 @@ export async function runTrack4(privateKey?: string): Promise<string> {
   if (swap1.success) {
     log(`  Executed: ${swap1.amountIn} USDC -> ${swap1.amountOut} ETH`);
     log(`  Tx: ${swap1.txHash?.slice(0, 20)}...`);
+    if (swap1.txHash) log(`  Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${swap1.txHash}`);
   } else {
     log(`  Error: ${swap1.error}`);
   }
@@ -97,12 +100,31 @@ export async function runTrack4(privateKey?: string): Promise<string> {
   log(`  Risk score: ${swap3.decision.riskScore}/100`);
   if (swap3.success) {
     log(`  Executed: ${swap3.amountIn} USDC -> ${swap3.amountOut} ETH`);
+    if (swap3.txHash) {
+      log(`  Tx: ${swap3.txHash.slice(0, 20)}...`);
+      log(`  Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${swap3.txHash}`);
+    }
   }
   log(``);
 
   // Trade log
   log(`━━━ Full Trade Log ━━━`);
   log(defi.getTradeLog());
+  log(``);
+
+  // On-chain verification
+  const allTxHashes = [swap1, swap3]
+    .filter((s) => s.success && s.txHash)
+    .map((s) => s.txHash!);
+
+  if (allTxHashes.length > 0) {
+    log(`\n\x1b[33m━━━ On-Chain Verification ━━━\x1b[0m`);
+    const verification = await verifyTransactions(allTxHashes);
+    log(formatVerificationReport(verification));
+    for (const r of verification.results.filter((r) => r.confirmed)) {
+      log(`  Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.hash}`);
+    }
+  }
   log(``);
 
   const approved = riskEngine.getHistory().filter((d) => d.approved).length;

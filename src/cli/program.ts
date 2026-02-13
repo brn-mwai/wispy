@@ -1303,8 +1303,8 @@ program
         }
       } catch {}
 
-      const { startRepl } = await import("./repl.js");
-      await startRepl({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
+      const { startInkRepl } = await import("./ink/ink-repl.js");
+      await startInkRepl({ rootDir: ROOT_DIR, runtimeDir: RUNTIME_DIR, soulDir: SOUL_DIR });
     }
   });
 

@@ -1,4 +1,6 @@
 import chalk from "chalk";
+import gradient from "gradient-string";
+import { getTheme } from "../ui/theme.js";
 import type { MarathonEvent, MarathonEventType, MarathonState, Milestone } from "../../marathon/types.js";
 
 /**
@@ -158,17 +160,18 @@ export class MarathonRenderer {
    */
   private printHeader(): void {
     const width = Math.min(process.stdout.columns || 80, 80);
-    const border = chalk.dim("\u2550".repeat(width));
+    const theme = getTheme();
+    const g = gradient(theme.gradient);
     console.log();
-    console.log(border);
-    console.log(`  ${skyBold("\u26A1 Marathon Started")}`);
+    console.log(g("\u2501".repeat(width)));
+    console.log(`  ${theme.brandBold("\u26A1 Marathon Started")}`);
     if (this.marathonGoal) {
       console.log(`  ${chalk.dim("Goal:")} ${chalk.white(this.marathonGoal)}`);
     }
     if (this.marathonId) {
       console.log(`  ${chalk.dim("ID:")} ${chalk.dim(this.marathonId.slice(0, 8))}`);
     }
-    console.log(border);
+    console.log(g("\u2501".repeat(width)));
   }
 
   /**
@@ -190,12 +193,14 @@ export class MarathonRenderer {
     const completed = this.milestones.filter(m => m.status === "completed").length;
     const total = this.milestones.length;
     const width = Math.min(process.stdout.columns || 80, 80);
+    const theme = getTheme();
+    const g = gradient(theme.gradient);
 
     console.log();
-    console.log(chalk.dim("\u2550".repeat(width)));
+    console.log(g("\u2501".repeat(width)));
     console.log(`  ${chalk.green.bold("\u2713 Marathon Complete")}`);
     console.log(`  ${completed}/${total} milestones ${chalk.dim("\u00B7")} ${formatDuration(parseInt(elapsed))} ${chalk.dim("\u00B7")} ${this.recoveryCount} recoveries`);
-    console.log(chalk.dim("\u2550".repeat(width)));
+    console.log(g("\u2501".repeat(width)));
     console.log();
   }
 
@@ -204,13 +209,15 @@ export class MarathonRenderer {
    */
   private printFailure(error?: string): void {
     const width = Math.min(process.stdout.columns || 80, 80);
+    const theme = getTheme();
+    const g = gradient(theme.gradient);
     console.log();
-    console.log(chalk.dim("\u2550".repeat(width)));
+    console.log(g("\u2501".repeat(width)));
     console.log(`  ${chalk.red.bold("\u2717 Marathon Failed")}`);
     if (error) console.log(`  ${chalk.dim(error)}`);
     const completed = this.milestones.filter(m => m.status === "completed").length;
     console.log(`  ${completed}/${this.milestones.length} milestones completed before failure`);
-    console.log(chalk.dim("\u2550".repeat(width)));
+    console.log(g("\u2501".repeat(width)));
     console.log();
   }
 

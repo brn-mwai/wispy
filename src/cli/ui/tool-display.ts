@@ -9,9 +9,6 @@ export interface ToolCallDisplay {
   durationMs?: number;
 }
 
-/**
- * Humanize a snake_case or camelCase tool name to Title Case.
- */
 function humanizeName(name: string): string {
   return name
     .replace(/_/g, " ")
@@ -19,74 +16,76 @@ function humanizeName(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/**
- * Truncate a string to `max` characters with ellipsis.
- */
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 3) + "...";
 }
 
 /**
- * Format a tool call invocation line.
+ * Format a tool call with tree-style connectors.
  *
- * Pending (tool just invoked):
- *   ⏺ Read File
- *     path: src/index.ts
+ * Pending:
+ *   \u2B24 Read File
+ *     \u251C\u2500 path: src/index.ts
+ *     \u2570\u2500 limit: 100
  *
- * Success (tool returned):
- *   ⏺ Read File
- *     path: src/index.ts
- *     ✓ Done (0.3s)
- *     ╰─ 45 lines read
+ * Success:
+ *   \u25CF Read File
+ *     \u251C\u2500 path: src/index.ts
+ *     \u2714 Done (0.3s)
+ *     \u2570\u2500 45 lines read
  *
- * Error (tool failed):
- *   ⏺ Write File
- *     path: src/output.ts
- *     content: "export function..." (truncated)
- *     ✗ Error (1.2s)
- *     ╰─ Permission denied
+ * Error:
+ *   \u25CF Write File
+ *     \u251C\u2500 path: src/output.ts
+ *     \u2718 Error (1.2s)
+ *     \u2570\u2500 Permission denied
  */
 export function formatToolCall(tc: ToolCallDisplay): string {
   const lines: string[] = [];
   const displayName = humanizeName(tc.name);
 
-  // Tool header
-  if (tc.status === "pending") {
-    lines.push(`  ${t.accent("⏺")} ${chalk.bold.white(displayName)}`);
-  } else if (tc.status === "ok") {
-    lines.push(`  ${chalk.green("⏺")} ${chalk.bold.white(displayName)}`);
-  } else {
-    lines.push(`  ${chalk.red("⏺")} ${chalk.bold.white(displayName)}`);
-  }
+  // Status-aware header icon
+  const icon =
+    tc.status === "pending"
+      ? t.accent("\u23FA")
+      : tc.status === "ok"
+        ? chalk.green("\u25CF")
+        : chalk.red("\u25CF");
 
-  // Args (show up to 3)
+  lines.push(`  ${icon} ${chalk.bold.white(displayName)}`);
+
+  // Args with tree connectors
   const entries = Object.entries(tc.args);
   const maxShow = 3;
-  for (let i = 0; i < Math.min(entries.length, maxShow); i++) {
+  const showCount = Math.min(entries.length, maxShow);
+
+  for (let i = 0; i < showCount; i++) {
     const [key, val] = entries[i];
     const valStr = typeof val === "string" ? val : JSON.stringify(val);
-    lines.push(`    ${chalk.dim(key + ":")} ${truncate(valStr, 80)}`);
+    const isLast = i === showCount - 1 && tc.status === "pending" && entries.length <= maxShow;
+    const connector = isLast ? "\u2570\u2500" : "\u251C\u2500";
+    lines.push(`    ${chalk.dim(connector)} ${chalk.dim(key + ":")} ${truncate(valStr, 75)}`);
   }
   if (entries.length > maxShow) {
-    lines.push(chalk.dim(`    ... +${entries.length - maxShow} more`));
+    lines.push(chalk.dim(`    \u2502  ... +${entries.length - maxShow} more`));
   }
 
-  // Duration badge
-  const duration = tc.durationMs ? `(${(tc.durationMs / 1000).toFixed(1)}s)` : "";
+  // Duration
+  const duration = tc.durationMs ? `${(tc.durationMs / 1000).toFixed(1)}s` : "";
 
-  // Result line
+  // Result
   if (tc.status === "ok") {
-    lines.push(`    ${chalk.green("✓")} ${chalk.green("Done")} ${chalk.dim(duration)}`);
+    lines.push(`    ${chalk.green("\u2714")} ${chalk.green("Done")} ${chalk.dim(duration)}`);
     if (tc.result) {
       const preview = truncate(tc.result.trim().split("\n")[0], 120);
-      lines.push(`    ${chalk.dim("╰─")} ${chalk.dim(preview)}`);
+      lines.push(`    ${chalk.dim("\u2570\u2500")} ${chalk.dim(preview)}`);
     }
   } else if (tc.status === "error") {
-    lines.push(`    ${chalk.red("✗")} ${chalk.red("Error")} ${chalk.dim(duration)}`);
+    lines.push(`    ${chalk.red("\u2718")} ${chalk.red("Error")} ${chalk.dim(duration)}`);
     if (tc.result) {
       const preview = truncate(tc.result.trim().split("\n")[0], 120);
-      lines.push(`    ${chalk.dim("╰─")} ${chalk.dim(preview)}`);
+      lines.push(`    ${chalk.dim("\u2570\u2500")} ${chalk.red.dim(preview)}`);
     }
   }
 

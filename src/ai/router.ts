@@ -43,7 +43,7 @@ export function routeTask(
       return { model: models.embedding, thinking: "none" };
 
     case "voice":
-      return { model: "gemini-2.5-flash-native-audio", thinking: "none" };
+      return { model: models.flash, thinking: "none" };
 
     default:
       return { model: models.pro, thinking: "medium" };

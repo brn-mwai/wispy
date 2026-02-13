@@ -190,9 +190,7 @@ export class AgentIdentityManager {
 
     const signature = await this.account.signMessage({ message });
 
-    console.log(
-      `[ERC-8004] Identity proof signed by ${this.account.address.slice(0, 12)}...`,
-    );
+    // Identity proof signed
 
     return { message, signature, signer: this.account.address, timestamp };
   }
@@ -208,9 +206,7 @@ export class AgentIdentityManager {
     gatewayUrl?: string;
     capabilities?: string[];
   }): Promise<AgentIdentity> {
-    console.log(
-      `[ERC-8004] Registering agent identity for ${this.account.address}...`,
-    );
+    // Registering agent identity
 
     const registrationFile = this.buildRegistrationFile(config);
     const identityProof = await this.signIdentityProof(config.name);
@@ -219,9 +215,7 @@ export class AgentIdentityManager {
 
     if (deployed) {
       // On-chain registration via ERC-8004 Identity Registry
-      console.log(
-        `[ERC-8004] Registry deployed at ${this.registryAddress}. Registering on-chain...`,
-      );
+      // Registry deployed, registering on-chain
 
       try {
         const agentURI = `https://wispy.cc/.well-known/agent.json`;
@@ -263,13 +257,9 @@ export class AgentIdentityManager {
           onChain: true,
         };
 
-        console.log(
-          `[ERC-8004] Registered on-chain. Agent ID: ${agentId}, tx: ${txHash.slice(0, 16)}...`,
-        );
+        // Registered on-chain
       } catch (err) {
-        console.warn(
-          `[ERC-8004] On-chain registration failed: ${(err as Error).message}. Using local identity.`,
-        );
+        // On-chain registration failed, using local identity
         this.identity = {
           address: this.account.address,
           registrationFile,
@@ -279,9 +269,7 @@ export class AgentIdentityManager {
       }
     } else {
       // Local signed identity (no registry deployed)
-      console.log(
-        `[ERC-8004] No registry on chain ${SKALE_BITE_SANDBOX.chainId}. Creating local signed identity.`,
-      );
+      // No registry on chain, creating local signed identity
 
       this.identity = {
         address: this.account.address,

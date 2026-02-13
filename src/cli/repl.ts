@@ -187,6 +187,33 @@ export async function startRepl(opts: ReplOpts) {
   const mcpStatus = mcpRegistry.getStatus();
   if (mcpStatus.length > 0) agent.setMcpRegistry(mcpRegistry);
 
+  // Wallet init — must happen BEFORE integrations so AGENT_PRIVATE_KEY is set
+  try {
+    const { initWallet, exportWalletPrivateKey } = await import("../wallet/x402.js");
+    initWallet(runtimeDir, identity);
+    if (!process.env.AGENT_PRIVATE_KEY) {
+      try {
+        const pk = exportWalletPrivateKey(runtimeDir, identity);
+        process.env.AGENT_PRIVATE_KEY = pk;
+      } catch { /* first run, no wallet yet */ }
+    }
+  } catch { /* wallet optional */ }
+
+  // Load integrations (agentic-commerce, etc.)
+  try {
+    const { loadIntegrations } = await import("../integrations/loader.js");
+    const { CredentialManager } = await import("../integrations/credential-manager.js");
+    const credMgr = new CredentialManager(runtimeDir, Buffer.from(identity.deviceId, "hex"));
+    const integrationRegistry = await loadIntegrations(
+      { config, runtimeDir, soulDir, credentialManager: credMgr, logger },
+      config.integrations ?? [],
+    );
+    agent.setIntegrationRegistry(integrationRegistry);
+    logger.info("Integrations loaded: %d total, %d enabled", integrationRegistry.size, integrationRegistry.enabledCount);
+  } catch (err) {
+    logger.warn("Integration loading failed: %s", err);
+  }
+
   // Wire Cron and Reminder services
   const cronService = new CronService(runtimeDir, agent);
   cronService.start();
@@ -266,16 +293,7 @@ export async function startRepl(opts: ReplOpts) {
   // Check for updates (non-blocking)
   printUpdateNotification(WISPY_VERSION).catch(() => {});
 
-  // Show quick tips
-  const tips = [
-    "Type naturally: \"build me a REST API\", \"fix the login bug\"",
-    "/marathon <goal> for autonomous multi-step execution",
-    "/help for commands, /quick for shortcuts",
-  ];
-  for (const tip of tips) {
-    console.log(chalk.dim(`  ${chalk.rgb(49, 204, 255)("·")} ${tip}`));
-  }
-  console.log();
+  // Tips are now integrated into the banner
   renderer.renderSeparator();
 
   // ── Command completer for Tab autocomplete ──
@@ -405,6 +423,8 @@ export async function startRepl(opts: ReplOpts) {
     let currentToolName = "";
     let accumulatedText = "";
     let firstText = true;
+    let realInputTokens = 0;
+    let realOutputTokens = 0;
 
     // Extract images from input (multimodal support)
     const { text: chatText, images: chatImages } = extractImages(input);
@@ -482,6 +502,15 @@ export async function startRepl(opts: ReplOpts) {
             process.stdout.write(chunk.content);
             break;
 
+          case "usage": {
+            try {
+              const usage = JSON.parse(chunk.content);
+              realInputTokens = usage.inputTokens ?? 0;
+              realOutputTokens = usage.outputTokens ?? 0;
+            } catch {}
+            break;
+          }
+
           case "context_compacted":
             stopSpinner();
             console.log(chalk.dim("  ⟳ Context auto-compacted"));
@@ -499,15 +528,17 @@ export async function startRepl(opts: ReplOpts) {
       }
 
       // ── Stats line ──
-      const outputTokens = Math.ceil(accumulatedText.length / 4);
-      const inputTokens = Math.ceil(input.length / 4) + 100;
-      tokenManager.recordUsage("gemini-2.5-flash", inputTokens, outputTokens);
+      // Use real Gemini API token counts when available, fall back to estimation
+      const outputTokens = realOutputTokens || Math.ceil(accumulatedText.length / 4);
+      const inputTokens = realInputTokens || (Math.ceil(input.length / 4) + 100);
+      tokenManager.recordUsage(config.gemini.models.pro, inputTokens, outputTokens);
 
       const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(1);
       const totalTk = inputTokens + outputTokens;
       const stats = tokenManager.getStats();
       const cost = stats.sessionCost;
-      const pct = Math.round((stats.sessionTokens / stats.budget.maxTokensPerSession) * 100);
+      const contextWindow = tokenManager.getContextWindow(config.gemini.models.pro);
+      const pct = Math.round((stats.sessionTokens / contextWindow) * 100);
 
       // Format model name
       const modelDisplay = config.gemini.models.pro

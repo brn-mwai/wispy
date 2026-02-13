@@ -343,7 +343,7 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   // === Wallet ===
   {
     name: "wallet_balance",
-    description: "Check crypto wallet balance (USDC on Base).",
+    description: "Check crypto wallet balance. Uses SKALE BITE V2 (gasless) when AGENT_PRIVATE_KEY is set, otherwise Base Sepolia. Shows USDC balance and wallet address.",
     parameters: {
       type: "object",
       properties: {},
@@ -351,7 +351,7 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   },
   {
     name: "wallet_pay",
-    description: "Execute a real USDC transfer on Base. Subject to commerce policy (spending limits, recipient controls). Small amounts may auto-approve; larger amounts require human approval.",
+    description: "Send USDC to an address. Uses SKALE BITE V2 (gasless) when AGENT_PRIVATE_KEY is set, otherwise Base. Subject to commerce policy (spending limits, recipient controls).",
     parameters: {
       type: "object",
       properties: {
@@ -363,7 +363,7 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
   },
   {
     name: "commerce_status",
-    description: "Check commerce policy, spending limits, and today's payment activity.",
+    description: "Check commerce policy, spending limits, wallet balance, and today's payment activity. Shows full audit trail on SKALE when AGENT_PRIVATE_KEY is set.",
     parameters: {
       type: "object",
       properties: {},
@@ -553,6 +553,18 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
         minScore: { type: "number", description: "Minimum reputation score required (default: 70)" },
       },
       required: ["agentId"],
+    },
+  },
+  // === Hackathon Tools: ERC-8004 Deploy ===
+  {
+    name: "deploy_erc8004",
+    description: "Deploy ERC-8004 Trustless Agent Identity contracts on SKALE BITE V2 (gasless). Deploys IdentityRegistry, ReputationRegistry, ValidationRegistry. Requires AGENT_PRIVATE_KEY.",
+    parameters: {
+      type: "object",
+      properties: {
+        register_agent: { type: "boolean", description: "Also register this agent's identity after deployment (default: true)" },
+        agent_uri: { type: "string", description: "Custom agent URI for registration (default: auto-generated)" },
+      },
     },
   },
   // === Hackathon Tools: A2A Protocol ===

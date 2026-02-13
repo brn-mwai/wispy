@@ -59,14 +59,9 @@ export class X402Buyer {
       networks: [SKALE_BITE_SANDBOX.network],
     });
 
-    // Hook into payment lifecycle for tracking
-    client.onAfterPaymentCreation(async (context) => {
-      console.log(`[x402] Payment payload created`);
-    });
-
-    client.onPaymentCreationFailure(async (context) => {
-      console.error(`[x402] Payment creation failed`);
-    });
+    // Hook into payment lifecycle for tracking (silent)
+    client.onAfterPaymentCreation(async () => {});
+    client.onPaymentCreationFailure(async () => {});
 
     // Wrap native fetch with payment handling
     this.paidFetch = wrapFetchWithPayment(globalThis.fetch, client);
@@ -110,7 +105,7 @@ export class X402Buyer {
     }
 
     try {
-      console.log(`[x402] Fetching: ${url}`);
+      // Silent fetch — tracked via history
       const response = await this.paidFetch(url, options);
 
       // Check for settlement info in response headers
@@ -159,9 +154,7 @@ export class X402Buyer {
           });
         }
 
-        console.log(
-          `[x402] Payment settled: $${amountUsdc.toFixed(6)} USDC | tx: ${txHash.slice(0, 16)}...`,
-        );
+        // Payment settled — tracked in history
       }
 
       return response;

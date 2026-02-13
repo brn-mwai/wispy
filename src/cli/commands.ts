@@ -35,7 +35,7 @@ const commands: SlashCommand[] = [
         "Marathon": ["marathon"],
         "System": ["config", "security", "logs", "tokens", "cost", "context", "stats", "doctor", "onboard"],
         "Utilities": ["export", "copy", "theme", "verbose", "checkpoints", "rewind"],
-        "Advanced": ["wallet", "x402scan", "peers", "cron", "agents", "plugins", "integrations", "browser", "voice"],
+        "Advanced": ["wallet", "x402scan", "x402demo", "commerce", "peers", "cron", "agents", "plugins", "integrations", "browser", "voice"],
       };
 
       console.log(chalk.bold.cyan("\n  Wispy Commands\n"));
@@ -575,13 +575,225 @@ const commands: SlashCommand[] = [
         console.log();
       } else {
         // Default: full wallet scan
-        console.log(t.dim("\nScanning wallet on Base...\n"));
+        console.log(t.dim("\nScanning wallet on SKALE...\n"));
         const summary = await scanner.scanWallet(addr);
         console.log(formatScanSummary(summary));
         console.log(t.dim("\n  /x402scan history    — Transaction list"));
         console.log(t.dim("  /x402scan verify <hash> — Verify tx on-chain"));
         console.log(t.dim("  /x402scan reconcile — Compare on-chain vs local\n"));
       }
+    },
+  },
+  {
+    name: "x402demo",
+    description: "Run x402 hackathon demo [1-5|all|preflight|stop]",
+    handler: async (args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const subcommand = args.trim().split(/\s+/)[0]?.toLowerCase() || "";
+
+      // Preflight balance check
+      if (subcommand === "preflight" || subcommand === "check") {
+        const { runPreflight } = await import("../integrations/agentic-commerce/demo/preflight.js");
+        const result = await runPreflight(process.env.AGENT_PRIVATE_KEY);
+        console.log(chalk.bold("\n  x402 Demo Pre-flight Check\n"));
+        console.log(`  Mode:    ${result.mode === "live" ? chalk.green("LIVE") : chalk.yellow("SIMULATION")}`);
+        console.log(`  Address: ${result.address}`);
+        if (result.mode === "live") {
+          console.log(`  sFUEL:   ${result.sFuelBalance}`);
+          console.log(`  USDC:    $${result.usdcBalance.toFixed(6)}`);
+          console.log(`  Ready:   ${result.ready ? chalk.green("YES") : chalk.red("NO")}`);
+        }
+        for (const w of result.warnings) {
+          console.log(chalk.yellow(`  [WARN] ${w}`));
+        }
+        console.log();
+        return;
+      }
+
+      // Stop any running demo services
+      if (subcommand === "stop" || subcommand === "kill") {
+        try {
+          const { stopDemoServices } = await import("../integrations/agentic-commerce/demo/server.js");
+          await stopDemoServices();
+          console.log(chalk.green("\n  Demo services stopped.\n"));
+        } catch {
+          console.log(t.dim("\n  No demo services running.\n"));
+        }
+        return;
+      }
+
+      // Run all 5 tracks sequentially
+      if (subcommand === "all") {
+        try {
+          const { stopDemoServices } = await import("../integrations/agentic-commerce/demo/server.js");
+          await stopDemoServices();
+        } catch { /* nothing running */ }
+
+        console.log(chalk.bold("\n  Running all 5 tracks sequentially...\n"));
+        const trackModulesAll: Record<number, string> = {
+          1: "../integrations/agentic-commerce/demo/scenarios/track1-overall.js",
+          2: "../integrations/agentic-commerce/demo/scenarios/track2-x402.js",
+          3: "../integrations/agentic-commerce/demo/scenarios/track3-ap2.js",
+          4: "../integrations/agentic-commerce/demo/scenarios/track4-defi.js",
+          5: "../integrations/agentic-commerce/demo/scenarios/track5-bite.js",
+        };
+        const trackNamesAll: Record<number, string> = {
+          1: "Overall Best Agentic App",
+          2: "Agentic Tool Usage on x402",
+          3: "Best Integration of AP2",
+          4: "Best Trading / DeFi Agent",
+          5: "Encrypted Agents (BITE v2)",
+        };
+        const results: Array<{ num: number; name: string; ok: boolean; ms: number; err?: string }> = [];
+        const totalStart = Date.now();
+
+        for (let i = 1; i <= 5; i++) {
+          const start = Date.now();
+          try {
+            // Stop services between tracks to avoid port conflicts
+            try { await (await import("../integrations/agentic-commerce/demo/server.js")).stopDemoServices(); } catch {}
+            const mod = await import(trackModulesAll[i]);
+            await mod[`runTrack${i}`](process.env.AGENT_PRIVATE_KEY);
+            results.push({ num: i, name: trackNamesAll[i], ok: true, ms: Date.now() - start });
+          } catch (err) {
+            results.push({ num: i, name: trackNamesAll[i], ok: false, ms: Date.now() - start, err: (err as Error).message });
+          }
+        }
+
+        // Summary
+        console.log(chalk.bold("\n  ══════════════════════════════════════"));
+        console.log(chalk.bold("  DEMO SUMMARY"));
+        console.log(chalk.bold("  ══════════════════════════════════════\n"));
+        for (const r of results) {
+          const icon = r.ok ? chalk.green("[OK]") : chalk.red("[!!]");
+          console.log(`  ${icon} Track ${r.num}: ${r.name} (${(r.ms / 1000).toFixed(1)}s)`);
+          if (r.err) console.log(`       ${chalk.red(r.err)}`);
+        }
+        const passed = results.filter(r => r.ok).length;
+        console.log(`\n  Passed: ${passed}/5 | Total: ${((Date.now() - totalStart) / 1000).toFixed(1)}s\n`);
+        return;
+      }
+
+      // Parse track number
+      const trackNum = /^[1-5]$/.test(subcommand) ? parseInt(subcommand) : 0;
+
+      if (trackNum >= 1 && trackNum <= 5) {
+        const trackModules: Record<number, string> = {
+          1: "../integrations/agentic-commerce/demo/scenarios/track1-overall.js",
+          2: "../integrations/agentic-commerce/demo/scenarios/track2-x402.js",
+          3: "../integrations/agentic-commerce/demo/scenarios/track3-ap2.js",
+          4: "../integrations/agentic-commerce/demo/scenarios/track4-defi.js",
+          5: "../integrations/agentic-commerce/demo/scenarios/track5-bite.js",
+        };
+        const trackNames: Record<number, string> = {
+          1: "Overall Best Agentic App",
+          2: "Agentic Tool Usage on x402",
+          3: "Best Integration of AP2",
+          4: "Best Trading / DeFi Agent",
+          5: "Encrypted Agents (BITE v2)",
+        };
+
+        // Stop any running services first to avoid EADDRINUSE
+        try {
+          const { stopDemoServices } = await import("../integrations/agentic-commerce/demo/server.js");
+          await stopDemoServices();
+        } catch { /* nothing running */ }
+
+        console.log(chalk.bold(`\n  Track ${trackNum}: ${trackNames[trackNum]}\n`));
+        const start = Date.now();
+        try {
+          const mod = await import(trackModules[trackNum]);
+          const runFn = mod[`runTrack${trackNum}`];
+          await runFn(process.env.AGENT_PRIVATE_KEY);
+          console.log(chalk.green(`\n  Completed in ${((Date.now() - start) / 1000).toFixed(1)}s\n`));
+        } catch (err) {
+          const msg = (err as Error).message;
+          if (msg.includes("EADDRINUSE")) {
+            console.log(chalk.red(`\n  Port in use. Run /x402demo stop first, then try again.\n`));
+          } else {
+            console.log(chalk.red(`\n  Track ${trackNum} failed: ${msg}\n`));
+          }
+        }
+        return;
+      }
+
+      // Default: show demo menu
+      console.log(chalk.bold("\n  x402 Agentic Commerce Demo\n"));
+      console.log(`  ${chalk.cyan("Chain:")}    SKALE BITE V2 Sandbox (gasless)`);
+      console.log(`  ${chalk.cyan("Wallet:")}   ${process.env.AGENT_PRIVATE_KEY ? chalk.green("Connected") : chalk.yellow("Simulation mode")}`);
+      console.log();
+      console.log(t.dim("  Tracks:"));
+      console.log(`  /x402demo 1         Track 1: Overall Best Agentic App`);
+      console.log(`  /x402demo 2         Track 2: x402 Autonomous Payments`);
+      console.log(`  /x402demo 3         Track 3: AP2 Authorization Flows`);
+      console.log(`  /x402demo 4         Track 4: DeFi Trading Agent`);
+      console.log(`  /x402demo 5         Track 5: BITE v2 Encrypted Payments`);
+      console.log();
+      console.log(`  /x402demo preflight Pre-flight balance check`);
+      console.log(`  /x402demo stop      Stop running demo services`);
+      console.log(`  /x402demo all       Run all 5 tracks`);
+      console.log();
+    },
+  },
+  {
+    name: "commerce",
+    description: "Agentic commerce integration status",
+    handler: async (_args, ctx) => {
+      const chalk = (await import("chalk")).default;
+      const registry = ctx.agent.getIntegrationRegistry();
+
+      if (!registry) {
+        console.log(t.dim("\n  No integrations loaded.\n"));
+        return;
+      }
+
+      const commerce = registry.get("agentic-commerce");
+      if (!commerce) {
+        console.log(t.dim("\n  Agentic commerce integration not registered.\n"));
+        return;
+      }
+
+      console.log(chalk.bold("\n  Agentic Commerce (x402)\n"));
+
+      const statusColor = commerce.status === "active" ? chalk.green : commerce.status === "error" ? chalk.red : chalk.yellow;
+      console.log(`  Status:  ${statusColor(commerce.status)}`);
+
+      if (commerce.error) {
+        console.log(`  Error:   ${chalk.red(commerce.error)}`);
+      }
+
+      if (commerce.enabled) {
+        const health = await commerce.instance.healthCheck();
+        console.log(`  Wallet:  ${health.message || "Unknown"}`);
+        console.log(`  Tools:   ${commerce.manifest.tools.length} available`);
+        console.log();
+        console.log(t.dim("  Available tools:"));
+        for (const tool of commerce.manifest.tools) {
+          console.log(`    ${chalk.cyan(tool.name)} — ${tool.description.slice(0, 60)}...`);
+        }
+      } else {
+        console.log();
+        console.log(t.dim("  To enable, set AGENT_PRIVATE_KEY in .env"));
+        console.log(t.dim("  Or Wispy will auto-export from the wallet at startup."));
+      }
+
+      // Connected channels (gateway, Telegram, REST, etc.)
+      console.log();
+      console.log(chalk.bold("  Connected Channels\n"));
+      const { getAllChannels } = await import("../channels/dock.js");
+      const channels = getAllChannels();
+      if (channels.length === 0) {
+        console.log(t.dim("  No channels connected. Start the gateway with /gateway start"));
+      } else {
+        for (const ch of channels) {
+          const icon = ch.status === "connected" ? chalk.green("\u25CF") : ch.status === "error" ? chalk.red("\u25CF") : chalk.yellow("\u25CF");
+          const caps = Object.entries(ch.capabilities).filter(([, v]) => v).map(([k]) => k).join(", ");
+          console.log(`  ${icon} ${chalk.bold(ch.name)} (${ch.type}) -- ${caps}`);
+          if (ch.connectedAt) console.log(`    ${t.dim("Connected: " + ch.connectedAt)}`);
+          if (ch.error) console.log(`    ${chalk.red("Error: " + ch.error)}`);
+        }
+      }
+      console.log();
     },
   },
   {

@@ -119,7 +119,7 @@ export class A2AServer {
       name: this.agentName,
       skills: skills.map((s) => s.name),
       channels: channels.map((c) => c.name),
-      models: ["gemini-3-pro", "gemini-3-flash", "gemini-3-image"],
+      models: ["gemini-3-pro-preview", "gemini-3-flash-preview", "imagen-3.0-generate-002"],
     };
   }
 

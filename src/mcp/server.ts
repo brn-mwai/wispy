@@ -420,9 +420,24 @@ export async function startMcpServer(rootDir: string) {
   server.tool(
     "wispy_a2a_delegate",
     "Delegate a task to another AI agent via A2A protocol",
-    { peerId: z.string(), task: z.string() },
-    async ({ peerId, task }) => {
-      return { content: [{ type: "text" as const, text: `Delegated to ${peerId}: ${task}` }] };
+    {
+      agentUrl: z.string().describe("URL of the target agent (e.g. http://localhost:4002)"),
+      task: z.string().describe("Task instruction to delegate"),
+    },
+    async ({ agentUrl, task }) => {
+      try {
+        const { A2AClient } = await import("../a2a/protocol.js");
+        const client = new A2AClient(agentUrl);
+        const result = await client.delegateTask(task);
+        const parts = result.message?.parts || [];
+        const resultText = parts.map((p: any) => p.text || "").filter(Boolean).join("\n");
+        const text = result.status === "completed"
+          ? `Delegation completed:\n${resultText || "done"}`
+          : `Delegation status: ${result.status}${resultText ? "\n" + resultText : ""}`;
+        return { content: [{ type: "text" as const, text }] };
+      } catch (err: any) {
+        return { content: [{ type: "text" as const, text: `A2A delegation failed: ${err.message}` }] };
+      }
     }
   );
 

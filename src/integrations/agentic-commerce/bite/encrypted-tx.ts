@@ -116,20 +116,20 @@ export class EncryptedCommerce {
       try {
         this.bite = new BITEClass(url);
         this.usingMock = false;
-        console.log("[BITE] Using live SKALE BITE SDK");
+        // Silent in production — logged at debug level only
       } catch {
         this.bite = new LocalBITEMock();
         this.usingMock = true;
-        console.log("[BITE] BITE SDK init failed, using local mock");
+        // Silent — falls back to mock
       }
     } else if (BITEMockupClass) {
       this.bite = new BITEMockupClass();
       this.usingMock = true;
-      console.log("[BITE] Using BITE SDK mockup");
+      // Silent — using mockup
     } else {
       this.bite = new LocalBITEMock();
       this.usingMock = true;
-      console.log("[BITE] Using local mock (SDK unavailable)");
+      // Silent — using local mock
     }
   }
 

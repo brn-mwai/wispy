@@ -14,6 +14,7 @@ import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
 import chalk from "chalk";
+import gradient from "gradient-string";
 import { writeYAML } from "../../utils/file.js";
 
 // ── Brand color ──────────────────────────────────────────
@@ -24,15 +25,17 @@ const bold = chalk.bold;
 const green = chalk.green;
 const yellowBright = chalk.yellowBright;
 
-// ── ASCII Art ────────────────────────────────────────────
-const WISPY_ASCII = `
-  ${sky("██╗    ██╗ ██╗ ███████╗ ██████╗  ██╗   ██╗")}
-  ${sky("██║    ██║ ██║ ██╔════╝ ██╔══██╗ ╚██╗ ██╔╝")}
-  ${sky("██║ █╗ ██║ ██║ ███████╗ ██████╔╝  ╚████╔╝ ")}
-  ${sky("██║███╗██║ ██║ ╚════██║ ██╔═══╝    ╚██╔╝  ")}
-  ${sky("╚███╔███╔╝ ██║ ███████║ ██║         ██║   ")}
-  ${sky(" ╚══╝╚══╝  ╚═╝ ╚══════╝ ╚═╝         ╚═╝   ")}
-`;
+// ── ASCII Art (gradient block letters) ───────────────────
+const WISPY_ASCII_RAW = [
+  "\u2588\u2588\u2557    \u2588\u2588\u2557 \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2557   \u2588\u2588\u2557",
+  "\u2588\u2588\u2551    \u2588\u2588\u2551 \u2588\u2588\u2551 \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255D \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557 \u255A\u2588\u2588\u2557 \u2588\u2588\u2554\u255D",
+  "\u2588\u2588\u2551 \u2588\u2557 \u2588\u2588\u2551 \u2588\u2588\u2551 \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255D  \u255A\u2588\u2588\u2588\u2588\u2554\u255D ",
+  "\u2588\u2588\u2551\u2588\u2588\u2588\u2557\u2588\u2588\u2551 \u2588\u2588\u2551 \u255A\u2550\u2550\u2550\u2550\u2588\u2588\u2551 \u2588\u2588\u2554\u2550\u2550\u2550\u255D    \u255A\u2588\u2588\u2554\u255D  ",
+  "\u255A\u2588\u2588\u2588\u2554\u2588\u2588\u2588\u2554\u255D \u2588\u2588\u2551 \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551 \u2588\u2588\u2551         \u2588\u2588\u2551   ",
+  " \u255A\u2550\u2550\u255D\u255A\u2550\u2550\u255D  \u255A\u2550\u255D \u255A\u2550\u2550\u2550\u2550\u2550\u2550\u255D \u255A\u2550\u255D         \u255A\u2550\u255D   ",
+];
+const wizardGradient = gradient(["#31CCFF", "#7B61FF", "#31CCFF"]);
+const WISPY_ASCII = "\n" + WISPY_ASCII_RAW.map(line => `  ${wizardGradient(line)}`).join("\n") + "\n";
 
 // ── Theme definitions ────────────────────────────────────
 const THEMES = [

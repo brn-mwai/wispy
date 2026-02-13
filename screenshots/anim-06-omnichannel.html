@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispy - Omnichannel</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Instrument Sans',-apple-system,sans-serif;background:linear-gradient(180deg,#8ACFEA 0%,#c5e5f5 50%,#FAFDFF 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 40px}
+    .card{width:820px;background:#fff;border-radius:22px;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,0.10),0 2px 12px rgba(0,0,0,0.06);opacity:0;animation:fadeIn .5s ease forwards .2s}
+    .inner{border-radius:14px;padding:24px 24px 20px;background:#fafbfc;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06)}
+    .header{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;opacity:0;animation:fadeDown .6s ease forwards .5s}
+    .header h1{font-size:19px;font-weight:700;color:#1e3a5f}
+    .header-sub{text-align:center;font-size:12.5px;color:#9ca3af;margin-bottom:18px;opacity:0;animation:fadeIn .5s ease forwards .8s}
+    .channels{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .ch-card{border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);border:.5px solid rgba(0,0,0,.06);opacity:0;transform:translateY(10px)}
+    .cc-1{animation:chIn .5s ease forwards 1.2s}
+    .cc-2{animation:chIn .5s ease forwards 2s}
+    .cc-3{animation:chIn .5s ease forwards 2.8s}
+    .cc-4{animation:chIn .5s ease forwards 3.6s}
+    @keyframes chIn{to{opacity:1;transform:translateY(0)}}
+    @keyframes fadeIn{to{opacity:1}}
+    @keyframes fadeDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+    .ch-label{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;padding:7px 12px;display:flex;align-items:center;gap:6px}
+    .ch-label i{font-size:13px}
+    /* CLI */
+    .cli-label{background:#1e293b;color:#8ACFEA}
+    .cli-body{background:#0c0c0c;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.7;color:#ccc;min-height:100px}
+    .cli-path{color:#616161}
+    .cli-cmd{color:#e8e6e3}
+    .cli-cyan{color:#8ACFEA}
+    .cli-green{color:#4ade80}
+    .cli-dim{color:#555}
+    .cli-white{color:#f2f2f2;font-weight:600}
+    .prog-bar-fill{color:#FF00E9;letter-spacing:-1px}
+    .prog-bar-bg{color:#333;letter-spacing:-1px}
+    .cursor{animation:blink 1s step-end infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+    /* Telegram */
+    .tg-label{background:#3390EC;color:#fff}
+    .tg-body{background:#E6EBF0;padding:10px 12px;min-height:100px}
+    .tg-msg{background:#fff;padding:6px 10px;border-radius:10px 10px 10px 4px;font-size:11.5px;color:#374151;box-shadow:0 1px 2px rgba(0,0,0,.04);max-width:92%;line-height:1.5}
+    .tg-btns{display:flex;gap:4px;margin-top:5px}
+    .tg-btn{padding:3px 10px;background:#f3f4f6;border:.5px solid rgba(0,0,0,.06);border-radius:6px;font-size:10px;font-weight:500;color:#374151}
+    .tg-time{font-size:10px;color:#9ca3af;text-align:right;margin-top:4px}
+    /* REST API */
+    .api-label{background:#16a34a;color:#fff}
+    .api-body{background:#0f172a;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.7;color:#94a3b8;min-height:100px}
+    .api-method{color:#4ade80;font-weight:600}
+    .api-url{color:#8ACFEA}
+    .api-key{color:#c4b5fd}
+    .api-str{color:#86efac}
+    .api-num{color:#fbbf24}
+    /* WebSocket */
+    .ws-label{background:#7c3aed;color:#fff}
+    .ws-body{background:#0f172a;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.7;color:#94a3b8;min-height:100px}
+    .ws-url{color:#c4b5fd}
+    .ws-event{color:#4ade80}
+    .ws-data{color:#fbbf24}
+    .ws-line{opacity:0}
+    .wl-1{animation:fadeIn .3s ease forwards 4s}
+    .wl-2{animation:fadeIn .3s ease forwards 4.5s}
+    .wl-3{animation:fadeIn .3s ease forwards 5s}
+    .connected-dot{display:inline-block;width:5px;height:5px;background:#4ade80;border-radius:50%;margin-right:4px;animation:connPulse 1.5s ease-in-out infinite}
+    @keyframes connPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(74,222,128,.4)}50%{opacity:.8;box-shadow:0 0 0 4px rgba(74,222,128,0)}}
+    /* Center connector */
+    .center-hub{display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 4px;opacity:0;animation:fadeIn .5s ease forwards 5.5s}
+    .hub-wispy{width:44px;height:44px;background:linear-gradient(135deg,#8ACFEA,#FAFDFF);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(138,207,234,.4);animation:hubGlow 2.5s ease-in-out infinite 5.5s}
+    @keyframes hubGlow{0%,100%{box-shadow:0 0 12px rgba(138,207,234,.35)}50%{box-shadow:0 0 30px rgba(138,207,234,.6)}}
+    .hub-line{width:40px;height:1px;background:linear-gradient(90deg,transparent,#8ACFEA,transparent)}
+    .hub-label{font-size:11px;color:#9ca3af;font-weight:500}
+    .bottom-text{text-align:center;font-size:12px;color:#6b7280;margin-top:8px;opacity:0;animation:fadeIn .5s ease forwards 6s}
+    .bottom-text strong{color:#1e3a5f}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="inner">
+      <div class="header">
+        <svg width="30" height="25" viewBox="0 0 163 136" fill="none"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5z" fill="url(#wg6)"/><path d="M68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z" fill="#fff"/><defs><linearGradient id="wg6" x1="81" y1="0" x2="81" y2="136" gradientUnits="userSpaceOnUse"><stop stop-color="#8ACFEA"/><stop offset="1" stop-color="#FAFDFF"/></linearGradient></defs></svg>
+        <h1>Same Gemini Brain, Every Channel</h1>
+      </div>
+      <div class="header-sub">Start from your terminal, check progress from your phone</div>
+      <div class="channels">
+        <!-- CLI -->
+        <div class="ch-card cc-1">
+          <div class="ch-label cli-label"><i class="ti ti-terminal-2"></i> CLI Terminal</div>
+          <div class="cli-body">
+            <div><span class="cli-path">C:\Users\Windows&gt;</span> <span class="cli-cmd">wispy marathon --resume ecobrew</span></div>
+            <div style="margin-top:4px"><span class="cli-cyan">&#9679;</span> <span class="cli-white">Marathon resumed</span> <span class="cli-dim">&mdash;</span> <span class="cli-cyan">ecobrew</span></div>
+            <div style="margin-top:4px"><span class="prog-bar-fill">&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span><span class="prog-bar-bg">&#9608;&#9608;&#9608;&#9608;&#9608;</span> <span class="cli-white">75%</span> <span class="cli-dim">&bull;</span> <span class="cli-dim">m6 active</span></div>
+            <div style="margin-top:4px"><span class="cli-cyan">&#10095;</span> <span class="cursor cli-cmd">&#9646;</span></div>
+          </div>
+        </div>
+        <!-- Telegram -->
+        <div class="ch-card cc-2">
+          <div class="ch-label tg-label"><i class="ti ti-brand-telegram"></i> Telegram</div>
+          <div class="tg-body">
+            <div class="tg-msg">
+              <p><strong>Marathon ecobrew:</strong> m6 complete (75%)</p>
+              <p style="font-size:10.5px;color:#6b7280;margin-top:2px">Building subscription plans page...</p>
+              <div class="tg-btns">
+                <div class="tg-btn">Pause</div>
+                <div class="tg-btn">Details</div>
+                <div class="tg-btn">Stop</div>
+              </div>
+            </div>
+            <div class="tg-time">16:29</div>
+          </div>
+        </div>
+        <!-- REST API -->
+        <div class="ch-card cc-3">
+          <div class="ch-label api-label"><i class="ti ti-api"></i> REST API</div>
+          <div class="api-body">
+            <div><span class="api-method">GET</span> <span class="api-url">/api/marathon/ecobrew/status</span></div>
+            <div style="margin-top:6px">{</div>
+            <div>&nbsp;&nbsp;<span class="api-key">"progress"</span>: <span class="api-num">75</span>,</div>
+            <div>&nbsp;&nbsp;<span class="api-key">"milestone"</span>: <span class="api-num">6</span>,</div>
+            <div>&nbsp;&nbsp;<span class="api-key">"status"</span>: <span class="api-str">"running"</span></div>
+            <div>}</div>
+          </div>
+        </div>
+        <!-- WebSocket -->
+        <div class="ch-card cc-4">
+          <div class="ch-label ws-label"><i class="ti ti-plug-connected"></i> WebSocket</div>
+          <div class="ws-body">
+            <div><span class="connected-dot"></span><span class="ws-url">ws://wispy.cc/live</span></div>
+            <div class="ws-line wl-1" style="margin-top:6px"><span class="ws-event">&#8594; milestone:complete</span> <span class="ws-data">{id: "m6"}</span></div>
+            <div class="ws-line wl-2"><span class="ws-event">&#8594; tool:call</span> <span class="ws-data">{name: "writeFile"}</span></div>
+            <div class="ws-line wl-3"><span class="ws-event">&#8594; thinking:stream</span> <span class="ws-data">{tokens: 2048}</span></div>
+          </div>
+        </div>
+      </div>
+      <!-- Center hub -->
+      <div class="center-hub">
+        <div class="hub-line"></div>
+        <div class="hub-wispy"><svg width="22" height="18" viewBox="0 0 163 136" fill="white"><path d="M61.9 1.3C101.4-6.9 115.1 26.6 115.2 26.7c.1 0 33.3-12.1 44.2 18.4 10.9 30.5-10.9 39.5-11 39.6 0 .1 2.3 24.7-15.3 31.7s-31.7 12.1-31.7 12c-.1.1-14.1 18-37.6 17.6-23.4-.4-31.7-26.5-31.7-26.6-.1 0-31-.1-32.1-29.5C-1.1 47.6 28.5 42.8 28.6 42.8c0-.1-6.2-33.3 33.3-41.5zM68.2 44.4c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 11-4.9 11-11V55.3c0-6-4.9-11-11-11zm27.4 0c-6.1 0-11 4.9-11 11v25.1c0 6 4.9 10.9 11 11 6 0 10.9-4.9 11-11V55.3c0-6-4.9-11-11-11z"/></svg></div>
+        <div class="hub-label">One brain, four channels</div>
+        <div class="hub-line"></div>
+      </div>
+      <div class="bottom-text">Start from your terminal... check progress from your phone</div>
+    </div>
+  </div>
+</body>
+</html>
