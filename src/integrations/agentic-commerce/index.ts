@@ -21,6 +21,9 @@ import { EncryptedCommerce } from "./bite/encrypted-tx.js";
 import type { EncryptedPayment } from "./bite/encrypted-tx.js";
 import type { PaymentCondition } from "./bite/conditional.js";
 import { AgentIdentityManager } from "./identity/erc8004.js";
+import { CDPWalletProvider } from "../../wallet/cdp-wallet.js";
+import { explorerTxLink, explorerAddressLink } from "./config.js";
+import { discoverServices, formatServiceCatalog } from "./x402/registry.js";
 
 export default class AgenticCommerceIntegration extends Integration {
   readonly manifest: IntegrationManifest = {
@@ -82,7 +85,22 @@ export default class AgenticCommerceIntegration extends Integration {
             format: {
               type: "string",
               description:
-                "Output format: json or markdown. Default: markdown",
+                "Output format: json or text. Default: text",
+            },
+          },
+        },
+      },
+      {
+        name: "x402_discover_services",
+        description:
+          "Discover available x402-paywalled services. Returns a catalog of local demo services and known external x402 APIs with URLs, pricing, and usage examples.",
+        parameters: {
+          type: "object",
+          properties: {
+            category: {
+              type: "string",
+              description:
+                "Filter by category: data, analytics, defi, infrastructure, ai. Leave empty for all.",
             },
           },
         },
@@ -132,7 +150,7 @@ export default class AgenticCommerceIntegration extends Integration {
             format: {
               type: "string",
               description:
-                "Output format: json or markdown. Default: markdown",
+                "Output format: json or text. Default: text",
             },
           },
         },
@@ -272,6 +290,7 @@ export default class AgenticCommerceIntegration extends Integration {
   private defiAgent?: DeFiAgent;
   private riskEngine?: RiskEngine;
   private encryptedCommerce?: EncryptedCommerce;
+  private cdpWallet?: CDPWalletProvider;
 
   // ─── Lifecycle ──────────────────────────────────────────
 
@@ -283,15 +302,31 @@ export default class AgenticCommerceIntegration extends Integration {
       );
     }
 
-    this.buyer = new X402Buyer({ privateKey });
+    // Try CDP wallet first for custody compliance, fall back to raw key
+    const hasCDP = !!(process.env.CDP_API_KEY_NAME && process.env.CDP_PRIVATE_KEY);
+    if (hasCDP) {
+      try {
+        this.cdpWallet = await CDPWalletProvider.create({
+          apiKeyName: process.env.CDP_API_KEY_NAME,
+          apiPrivateKey: process.env.CDP_PRIVATE_KEY,
+          agentPrivateKey: privateKey,
+          networkId: process.env.CDP_NETWORK_ID,
+        });
+        this.buyer = new X402Buyer({ privateKey, cdpWallet: this.cdpWallet });
+      } catch {
+        // CDP failed, use raw key
+        this.buyer = new X402Buyer({ privateKey });
+      }
+    } else {
+      this.buyer = new X402Buyer({ privateKey });
+    }
+
     this.tracker = new SpendTracker(this.buyer.address);
     this.buyer.setTracker(this.tracker);
     this.ap2Flow = new AP2Flow(this.buyer, this.tracker, privateKey);
     this.riskEngine = new RiskEngine();
     this.defiAgent = new DeFiAgent(privateKey, this.riskEngine, this.tracker);
     this.encryptedCommerce = new EncryptedCommerce(undefined, privateKey);
-
-    // Logged silently — /commerce shows status
   }
 
   async onDisable(): Promise<void> {
@@ -307,7 +342,27 @@ export default class AgenticCommerceIntegration extends Integration {
     if (!this.buyer) {
       return { healthy: false, message: "Not initialized — AGENT_PRIVATE_KEY missing" };
     }
-    return { healthy: true, message: `Wallet: ${this.buyer.address}` };
+    const provider = this.buyer.getWalletProvider() === "cdp" ? "CDP Server Wallet" : "Raw Key (viem)";
+    return { healthy: true, message: `Wallet: ${this.buyer.address} | Provider: ${provider}` };
+  }
+
+  // ─── Wallet Evidence ────────────────────────────────────
+
+  private getWalletEvidence(): Record<string, unknown> {
+    const evidence: Record<string, unknown> = {
+      address: this.buyer?.address,
+      provider: this.buyer?.getWalletProvider(),
+      explorerLink: this.buyer ? explorerAddressLink(this.buyer.address) : undefined,
+    };
+    if (this.cdpWallet) {
+      try {
+        const cdpEvidence = this.cdpWallet.getEvidence();
+        evidence.cdpManaged = true;
+        evidence.cdpWalletId = cdpEvidence.cdpWalletId;
+        evidence.cdpNetwork = cdpEvidence.cdpNetwork;
+      } catch { /* CDP evidence optional */ }
+    }
+    return evidence;
   }
 
   // ─── Tool Dispatch ──────────────────────────────────────
@@ -324,6 +379,8 @@ export default class AgenticCommerceIntegration extends Integration {
           return this.handleCheckBudget();
         case "x402_audit_trail":
           return this.handleAuditTrail(args);
+        case "x402_discover_services":
+          return this.handleDiscoverServices(args);
         case "ap2_purchase":
           return await this.handleAP2Purchase(args);
         case "ap2_get_receipts":
@@ -371,17 +428,35 @@ export default class AgenticCommerceIntegration extends Integration {
     const response = await this.buyer.payAndFetch(url, options, reason);
     const data = await response.text();
 
-    return this.ok(data, {
+    // Extract txHash from latest successful payment for proof link
+    const history = this.buyer.getPaymentHistory();
+    const lastPayment = history.filter(e => e.status === "success").pop();
+    const txHash = lastPayment?.txHash;
+    const proofLink = txHash && txHash !== "settled" ? explorerTxLink(txHash) : undefined;
+
+    let resultText = data;
+    if (proofLink) {
+      resultText += `\n\nTransaction proof: ${proofLink}`;
+    }
+
+    return this.ok(resultText, {
       status: response.status,
       url,
+      txHash,
+      explorerLink: proofLink,
       dailySpent: this.buyer.getDailySpent(),
       remaining: this.buyer.getRemainingBudget(),
+      wallet: this.getWalletEvidence(),
     });
   }
 
   private handleCheckBudget(): ToolResult {
     if (!this.buyer) return this.error("Not initialized");
-    return this.ok(this.buyer.getBudgetStatus());
+    const walletLink = explorerAddressLink(this.buyer.address);
+    return this.ok(
+      this.buyer.getBudgetStatus() + `\nExplorer: ${walletLink}`,
+      this.getWalletEvidence(),
+    );
   }
 
   private handleAuditTrail(args: Record<string, unknown>): ToolResult {
@@ -389,7 +464,18 @@ export default class AgenticCommerceIntegration extends Integration {
     const format = (args.format as string) ?? "markdown";
     return this.ok(
       format === "json" ? this.tracker.toJSON() : this.tracker.formatReport(),
+      this.getWalletEvidence(),
     );
+  }
+
+  private handleDiscoverServices(args: Record<string, unknown>): ToolResult {
+    const category = args.category as string | undefined;
+    const sellerAddr = this.buyer?.address ?? "unknown";
+    const result = discoverServices(sellerAddr, category || undefined);
+    return this.ok(formatServiceCatalog(result), {
+      total: result.total,
+      categories: result.categories,
+    });
   }
 
   // ─── AP2 Handlers ──────────────────────────────────────
@@ -423,11 +509,18 @@ export default class AgenticCommerceIntegration extends Integration {
     });
 
     const { formatReceiptMarkdown } = await import("./ap2/receipts.js");
-    return this.ok(formatReceiptMarkdown(record), {
+    const proofLink = record.receipt.txHash ? explorerTxLink(record.receipt.txHash) : undefined;
+    let receiptText = formatReceiptMarkdown(record);
+    if (proofLink) {
+      receiptText += `\n\nTransaction proof: ${proofLink}`;
+    }
+    return this.ok(receiptText, {
       status: record.receipt.status,
       txHash: record.receipt.txHash,
+      explorerLink: proofLink,
       intentId: record.intent.id,
       amount: record.receipt.amount,
+      wallet: this.getWalletEvidence(),
     });
   }
 
@@ -490,6 +583,7 @@ export default class AgenticCommerceIntegration extends Integration {
       );
     }
 
+    const proofLink = result.txHash ? explorerTxLink(result.txHash) : undefined;
     return this.ok(
       [
         `Swap executed successfully`,
@@ -497,11 +591,14 @@ export default class AgenticCommerceIntegration extends Integration {
         `Tx: ${result.txHash}`,
         `Slippage: ${result.slippage}%`,
         `Risk score: ${result.decision.riskScore}/100`,
-      ].join("\n"),
+        proofLink ? `Transaction proof: ${proofLink}` : "",
+      ].filter(Boolean).join("\n"),
       {
         txHash: result.txHash,
+        explorerLink: proofLink,
         riskScore: result.decision.riskScore,
         approved: true,
+        wallet: this.getWalletEvidence(),
       },
     );
   }
@@ -569,9 +666,16 @@ export default class AgenticCommerceIntegration extends Integration {
       paymentId,
     );
 
-    return this.ok(this.encryptedCommerce.getReport(paymentId), {
+    const proofLink = payment.txHash ? explorerTxLink(payment.txHash) : undefined;
+    let report = this.encryptedCommerce.getReport(paymentId);
+    if (proofLink) {
+      report += `\n\nTransaction proof: ${proofLink}`;
+    }
+    return this.ok(report, {
       status: payment.status,
       txHash: payment.txHash,
+      explorerLink: proofLink,
+      wallet: this.getWalletEvidence(),
     });
   }
 

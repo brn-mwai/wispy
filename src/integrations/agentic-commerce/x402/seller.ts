@@ -316,9 +316,9 @@ export async function startAllServices(sellerAddress: string): Promise<void> {
   console.log(`Network: SKALE BITE V2 Sandbox (chain ${SKALE_BITE_SANDBOX.chainId})`);
   console.log(`Facilitator: ${SKALE_BITE_SANDBOX.facilitatorUrl}\n`);
   console.log(`Services running:`);
-  console.log(`  Weather API:    http://localhost:${DEMO_PORTS.weather}/weather?city=Nairobi  (${SERVICE_PRICING.weather.display}/call)`);
-  console.log(`  Sentiment API:  http://localhost:${DEMO_PORTS.sentiment}/analyze               (${SERVICE_PRICING.sentiment.display}/call)`);
-  console.log(`  Report API:     http://localhost:${DEMO_PORTS.report}/report                (${SERVICE_PRICING.report.display}/call)\n`);
+  console.log(`  Weather API:    http://127.0.0.1:${DEMO_PORTS.weather}/weather?city=Nairobi  (${SERVICE_PRICING.weather.display}/call)`);
+  console.log(`  Sentiment API:  http://127.0.0.1:${DEMO_PORTS.sentiment}/analyze               (${SERVICE_PRICING.sentiment.display}/call)`);
+  console.log(`  Report API:     http://127.0.0.1:${DEMO_PORTS.report}/report                (${SERVICE_PRICING.report.display}/call)\n`);
   console.log(`Ready for agent testing.\n`);
 }
 
@@ -335,11 +335,11 @@ export async function stopAllServices(): Promise<void> {
   runningServices.length = 0;
 }
 
-/** Get URLs for all services */
+/** Get URLs for all services (use 127.0.0.1 to avoid IPv6 issues on Windows) */
 export function getServiceUrls(): Record<string, string> {
   return {
-    weather: `http://localhost:${DEMO_PORTS.weather}/weather`,
-    sentiment: `http://localhost:${DEMO_PORTS.sentiment}/analyze`,
-    report: `http://localhost:${DEMO_PORTS.report}/report`,
+    weather: `http://127.0.0.1:${DEMO_PORTS.weather}/weather`,
+    sentiment: `http://127.0.0.1:${DEMO_PORTS.sentiment}/analyze`,
+    report: `http://127.0.0.1:${DEMO_PORTS.report}/report`,
   };
 }

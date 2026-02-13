@@ -563,7 +563,7 @@ export class Agent {
     channel: string,
     sessionType: SessionType = "main",
     options?: { images?: Array<{ mimeType: string; data: string }> }
-  ): AsyncGenerator<{ type: string; content: string }> {
+  ): AsyncGenerator<{ type: string; content: string; success?: boolean }> {
     const { config, runtimeDir, soulDir } = this.ctx;
     const agentId = config.agent.id;
 
@@ -626,6 +626,10 @@ export class Agent {
         yield { type: "thinking", content: result.thinking };
       }
 
+      if (result.thoughtSignature) {
+        yield { type: "thought_signature", content: result.thoughtSignature };
+      }
+
       // If tool calls, execute them and loop
       if (result.toolCalls && result.toolCalls.length > 0) {
         const toolResults: string[] = [];
@@ -636,7 +640,7 @@ export class Agent {
 
           const toolResult = await this.toolExecutor.execute(call);
           const resultText = toolResult.success ? toolResult.output : "ERROR: " + toolResult.error;
-          yield { type: "tool_result", content: resultText };
+          yield { type: "tool_result", content: resultText, success: toolResult.success };
 
           toolResults.push(`Tool: ${call.name}\nResult: ${resultText}`);
         }

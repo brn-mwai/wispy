@@ -50,6 +50,10 @@ export interface Theme {
   primaryHex: string;
   accentHex: string;
   dimHex: string;
+  // Thinking level colors (hex for Ink)
+  thinkingLevelHex: Record<string, string>;
+  // Phase colors for marathon/background tasks
+  phaseHex: Record<string, string>;
 }
 
 const skyBlue = chalk.rgb(...SKY);
@@ -100,6 +104,14 @@ const dawn: Theme = {
   primaryHex: "#FF7F50",
   accentHex: "#FFB74D",
   dimHex: "#8B6050",
+  thinkingLevelHex: {
+    none: "#555555", minimal: "#6B7280", low: "#60A5FA",
+    medium: "#FBBF24", high: "#F97316", ultra: "#EF4444",
+  },
+  phaseHex: {
+    planning: "#A78BFA", executing: "#34D399", verifying: "#60A5FA",
+    recovering: "#FBBF24", idle: "#6B7280",
+  },
 };
 
 const day: Theme = {
@@ -125,6 +137,14 @@ const day: Theme = {
   primaryHex: "#31CCFF",
   accentHex: "#5E9FFF",
   dimHex: "#4A7A99",
+  thinkingLevelHex: {
+    none: "#555555", minimal: "#6B7280", low: "#60A5FA",
+    medium: "#FBBF24", high: "#F97316", ultra: "#EF4444",
+  },
+  phaseHex: {
+    planning: "#A78BFA", executing: "#34D399", verifying: "#60A5FA",
+    recovering: "#FBBF24", idle: "#6B7280",
+  },
 };
 
 const dusk: Theme = {
@@ -150,6 +170,14 @@ const dusk: Theme = {
   primaryHex: "#C864FF",
   accentHex: "#FF96C8",
   dimHex: "#7B4D99",
+  thinkingLevelHex: {
+    none: "#555555", minimal: "#6B7280", low: "#A78BFA",
+    medium: "#FBBF24", high: "#F97316", ultra: "#EF4444",
+  },
+  phaseHex: {
+    planning: "#C084FC", executing: "#34D399", verifying: "#A78BFA",
+    recovering: "#FBBF24", idle: "#6B7280",
+  },
 };
 
 const night: Theme = {
@@ -175,6 +203,14 @@ const night: Theme = {
   primaryHex: "#6478C8",
   accentHex: "#4A5A9F",
   dimHex: "#3D4A7A",
+  thinkingLevelHex: {
+    none: "#555555", minimal: "#6B7280", low: "#818CF8",
+    medium: "#FBBF24", high: "#F97316", ultra: "#EF4444",
+  },
+  phaseHex: {
+    planning: "#A78BFA", executing: "#34D399", verifying: "#818CF8",
+    recovering: "#FBBF24", idle: "#6B7280",
+  },
 };
 
 export const themes = { dawn, day, dusk, night } as const;

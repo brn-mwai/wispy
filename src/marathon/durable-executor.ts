@@ -305,8 +305,14 @@ export class DurableMarathonExecutor extends EventEmitter {
         throw new Error(`Loop detected after ${loopCheck.count} identical actions`);
       }
 
-      // Update thought signature
+      // Update thought signature and emit it
       this.state.thoughtSignature = this.extractThoughtSignature(response);
+      this.emitEvent("thinking", {
+        milestone: milestone.id,
+        signature: this.state.thoughtSignature,
+        level: this.state.plan?.thinkingStrategy?.execution || "high",
+        content: typeof response === "string" ? response.slice(0, 200) : "",
+      });
 
       // Verify
       const verified = await this.verifyMilestone(milestone);

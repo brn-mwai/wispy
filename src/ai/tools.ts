@@ -771,6 +771,31 @@ export const BUILT_IN_TOOLS: ToolDeclaration[] = [
       required: ["topic", "sections", "outputPath"],
     },
   },
+  // === x402 Audit Report ===
+  {
+    name: "generate_x402_report",
+    description: "Generate a professional x402 agentic commerce audit report as PDF. Creates a LaTeX document with transaction logs, track results, on-chain verification links, and spending summary. Uses Wispy whitepaper styling.",
+    parameters: {
+      type: "object",
+      properties: {
+        outputPath: { type: "string", description: "Output path for the PDF report (absolute or relative). Example: C:\\Users\\Windows\\x402-audit-report.pdf" },
+        agentAddress: { type: "string", description: "Agent wallet address (0x...)" },
+        sellerAddress: { type: "string", description: "Seller/recipient wallet address (0x...)" },
+        network: { type: "string", description: "Network name (e.g. SKALE BITE V2 Sandbox)" },
+        chainId: { type: "number", description: "Chain ID (e.g. 103698795)" },
+        explorerUrl: { type: "string", description: "Block explorer base URL" },
+        transactions: { type: "string", description: "JSON array of transactions: [{service, amount, recipient, txHash, status, timestamp, reason?}]" },
+        tracks: { type: "string", description: "JSON array of track results: [{track, title, status, summary, toolCalls?, payments?, spent?}]" },
+        totalSpent: { type: "number", description: "Total USDC spent" },
+        title: { type: "string", description: "Report title (optional)" },
+        subtitle: { type: "string", description: "Report subtitle (optional)" },
+        author: { type: "string", description: "Report author (optional, default: Wispy AI Agent)" },
+        duration: { type: "string", description: "Demo/session duration (optional)" },
+        demoTurns: { type: "number", description: "Number of demo turns (optional)" },
+      },
+      required: ["outputPath", "agentAddress", "network", "chainId", "explorerUrl", "transactions", "tracks", "totalSpent"],
+    },
+  },
   // === Telegram Document Delivery ===
   {
     name: "send_document_to_telegram",

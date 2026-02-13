@@ -506,54 +506,65 @@ export class EncryptedCommerce {
     const payment = this.payments.get(paymentId);
     if (!payment) return `Payment ${paymentId} not found.`;
 
+    const mode = this.usingMock ? "Mock (local)" : "Live (SKALE BITE v2 BLS)";
     const lines: string[] = [
-      `## BITE v2 Encrypted Payment Report`,
+      `━━━ BITE v2 Encrypted Payment ━━━`,
       ``,
-      `**ID:** \`${payment.id}\``,
-      `**Status:** ${payment.status}`,
-      `**On-chain:** ${payment.onChain ? "Yes" : "No (simulated)"}`,
-      `**Created:** ${payment.createdAt}`,
-      `**Mode:** ${this.usingMock ? "Mock (local)" : "Live (SKALE BITE v2 BLS threshold encryption)"}`,
+      `  ID:       ${payment.id}`,
+      `  Status:   ${payment.status}`,
+      `  On-chain: ${payment.onChain ? "Yes" : "No (simulated)"}`,
+      `  Created:  ${payment.createdAt.slice(0, 19)}`,
+      `  Mode:     ${mode}`,
       ``,
-      `### Original Transaction (pre-encryption)`,
-      `- **To:** \`${payment.originalTx.to}\``,
-      `- **Data:** \`${payment.originalTx.data.slice(0, 40)}...\``,
+      `  ┌─ Original Tx (pre-encryption) ──────`,
+      `  │ To:   ${payment.originalTx.to}`,
+      `  │ Data: ${payment.originalTx.data.slice(0, 40)}...`,
+      `  └────────────────────────────────────`,
       ``,
-      `### Encrypted Transaction (submitted to BITE address)`,
-      `- **To:** \`${payment.encryptedTx.to}\` (BITE magic address)`,
-      `- **Data:** \`${(payment.encryptedTx.data as string).slice(0, 40)}...\` (BLS-encrypted)`,
-      `- **Gas Limit:** ${payment.encryptedTx.gasLimit}`,
+      `  ┌─ Encrypted Tx (BITE address) ───────`,
+      `  │ To:   ${payment.encryptedTx.to} (BITE magic)`,
+      `  │ Data: ${(payment.encryptedTx.data as string).slice(0, 40)}...`,
+      `  │ Gas:  ${payment.encryptedTx.gasLimit}`,
+      `  └────────────────────────────────────`,
       ``,
-      `### Condition`,
-      `- **Type:** ${payment.condition.type}`,
-      `- **Description:** ${payment.condition.description}`,
-      `- **Status:** ${describeCondition(payment.condition)}`,
-      ``,
+      `  ┌─ Condition ─────────────────────────`,
+      `  │ Type:   ${payment.condition.type}`,
+      `  │ Desc:   ${payment.condition.description}`,
+      `  │ Status: ${describeCondition(payment.condition)}`,
+      `  └────────────────────────────────────`,
     ];
 
     if (payment.decryptedData) {
-      lines.push(`### Decrypted Data (post-consensus)`);
-      lines.push(`- **To:** \`${payment.decryptedData.to}\``);
       lines.push(
-        `- **Data:** \`${String(payment.decryptedData.data).slice(0, 40)}...\``,
+        ``,
+        `  ┌─ Decrypted Data (post-consensus) ──`,
+        `  │ To:   ${payment.decryptedData.to}`,
+        `  │ Data: ${String(payment.decryptedData.data).slice(0, 40)}...`,
+        `  └────────────────────────────────────`,
       );
-      lines.push(``);
     }
 
     if (payment.txHash) {
-      lines.push(`### Settlement`);
-      lines.push(`- **Tx Hash:** \`${payment.txHash}\``);
       lines.push(
-        `- **Explorer:** ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${payment.txHash}`,
+        ``,
+        `  ┌─ Settlement ──────────────────────`,
+        `  │ Tx:       ${payment.txHash}`,
+        `  │ Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${payment.txHash}`,
+        `  └────────────────────────────────────`,
       );
-      lines.push(``);
     }
 
-    lines.push(`### Timeline`);
-    for (const event of payment.timeline) {
-      lines.push(`1. **${event.event}** (${event.timestamp.slice(11, 19)})`);
-      if (event.details) lines.push(`   ${event.details}`);
+    lines.push(``, `  ┌─ Timeline ─────────────────────────`);
+    for (let i = 0; i < payment.timeline.length; i++) {
+      const ev = payment.timeline[i];
+      const isLast = i === payment.timeline.length - 1;
+      const c = isLast ? "╰" : "├";
+      lines.push(`  ${c}─ ${ev.event} (${ev.timestamp.slice(11, 19)})`);
+      if (ev.details) {
+        lines.push(`  ${isLast ? " " : "│"}  ${ev.details.slice(0, 70)}`);
+      }
     }
+    lines.push(`  └────────────────────────────────────`);
 
     return lines.join("\n");
   }

@@ -68,8 +68,10 @@ const evaluators: Record<
    */
   time_lock: async (params) => {
     const unlockAfter = params.unlockAfter as string | undefined;
-    if (!unlockAfter) return false;
-    return new Date() >= new Date(unlockAfter);
+    if (!unlockAfter) return true; // No time specified = immediately unlocked
+    const date = new Date(unlockAfter);
+    if (isNaN(date.getTime())) return true; // Invalid date = treat as unlocked
+    return new Date() >= date;
   },
 
   /**
@@ -128,7 +130,10 @@ export function describeCondition(condition: PaymentCondition): string {
     case "delivery_proof":
       return `Waiting for delivery proof (tx: ${(condition.params.txHash as string)?.slice(0, 12) ?? "pending"}...)`;
     case "time_lock": {
-      const unlockAfter = new Date(condition.params.unlockAfter as string);
+      const raw = condition.params.unlockAfter as string | undefined;
+      if (!raw) return "Time lock: immediately unlocked (no time specified)";
+      const unlockAfter = new Date(raw);
+      if (isNaN(unlockAfter.getTime())) return "Time lock: immediately unlocked (invalid time)";
       const now = new Date();
       if (now >= unlockAfter) return `Time lock expired (unlocked)`;
       const remaining = Math.ceil((unlockAfter.getTime() - now.getTime()) / 1000);

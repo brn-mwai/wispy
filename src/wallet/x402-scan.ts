@@ -25,6 +25,11 @@ const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
+// SKALE BITE V2 Sandbox
+const SKALE_RPC = "https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox";
+const USDC_SKALE = "0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8";
+const SKALE_EXPLORER_API = "https://base-sepolia-testnet-explorer.skalenodes.com:10032/api";
+
 // BaseScan API (free tier: 5 calls/sec)
 const BASESCAN_API = "https://api.basescan.org/api";
 const BASESCAN_SEPOLIA_API = "https://api-sepolia.basescan.org/api";
@@ -75,31 +80,39 @@ export interface TxVerification {
 
 export class X402Scanner {
   private provider: ethers.Provider;
-  private network: "base" | "base-sepolia";
+  private network: "base" | "base-sepolia" | "skale";
   private usdcAddress: string;
   private basescanApi: string;
   private basescanApiKey: string;
   private runtimeDir: string;
+  private nativeSymbol: string;
 
   constructor(
     runtimeDir: string,
     options: {
-      network?: "base" | "base-sepolia";
+      network?: "base" | "base-sepolia" | "skale";
       basescanApiKey?: string;
     } = {}
   ) {
     this.runtimeDir = runtimeDir;
-    this.network = options.network || "base";
+    this.network = options.network || "skale";
     this.basescanApiKey = options.basescanApiKey || process.env.BASESCAN_API_KEY || "";
 
-    if (this.network === "base-sepolia") {
+    if (this.network === "skale") {
+      this.provider = new ethers.JsonRpcProvider(SKALE_RPC);
+      this.usdcAddress = USDC_SKALE;
+      this.basescanApi = SKALE_EXPLORER_API;
+      this.nativeSymbol = "sFUEL";
+    } else if (this.network === "base-sepolia") {
       this.provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC);
       this.usdcAddress = USDC_BASE_SEPOLIA;
       this.basescanApi = BASESCAN_SEPOLIA_API;
+      this.nativeSymbol = "ETH";
     } else {
       this.provider = new ethers.JsonRpcProvider(BASE_RPC);
       this.usdcAddress = USDC_BASE;
       this.basescanApi = BASESCAN_API;
+      this.nativeSymbol = "ETH";
     }
   }
 
@@ -379,9 +392,11 @@ export function formatScanSummary(summary: ScanSummary): string {
   lines.push(`x402scan - Wallet Report`);
   lines.push(`${"─".repeat(50)}`);
   lines.push(`Address:      ${summary.address}`);
-  lines.push(`Network:      ${summary.network}`);
+  const networkDisplay = summary.network === "skale" ? "SKALE BITE V2 Sandbox (103698795)" : summary.network;
+  lines.push(`Network:      ${networkDisplay}`);
   lines.push(`USDC Balance: $${summary.usdcBalance}`);
-  lines.push(`ETH Balance:  ${summary.ethBalance} ETH`);
+  const nativeLabel = summary.network === "skale" ? "sFUEL" : "ETH";
+  lines.push(`${nativeLabel} Balance: ${summary.ethBalance} ${nativeLabel}`);
   lines.push(``);
   lines.push(`Transactions: ${summary.transactionCount}`);
   lines.push(`Total Sent:   $${summary.totalSent.toFixed(6)}`);

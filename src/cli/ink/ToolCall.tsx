@@ -61,9 +61,11 @@ export function ToolCall({ data }: { data: ToolCallData }) {
 
 export function ToolResult({ data }: { data: ToolResultData }) {
   const dur = `(${(data.durationMs / 1000).toFixed(1)}s)`;
-  const preview = data.result
-    ? truncate(data.result.trim().split("\n")[0], 120)
-    : "";
+  const lines = data.result
+    ? data.result.trim().split("\n").slice(0, 4)
+    : [];
+  const firstLine = lines[0] ? truncate(lines[0], 200) : "";
+  const extraLines = lines.slice(1).map((l) => truncate(l, 200));
 
   return (
     <Box flexDirection="column" marginLeft={2}>
@@ -78,19 +80,29 @@ export function ToolResult({ data }: { data: ToolResultData }) {
           <Text dimColor>{dur}</Text>
         </Text>
       )}
-      {preview ? (
+      {firstLine ? (
         <Text>
           {"  "}
           <Text dimColor>{"\u23BF"} </Text>
           {data.isError ? (
             <Text color="red" dimColor>
-              {preview}
+              {firstLine}
             </Text>
           ) : (
-            <Text dimColor>{preview}</Text>
+            <Text dimColor>{firstLine}</Text>
           )}
         </Text>
       ) : null}
+      {extraLines.map((line, i) => (
+        <Text key={i}>
+          {"    "}
+          {data.isError ? (
+            <Text color="red" dimColor>{line}</Text>
+          ) : (
+            <Text dimColor>{line}</Text>
+          )}
+        </Text>
+      ))}
     </Box>
   );
 }

@@ -143,10 +143,10 @@ export const SERVICE_PRICING = {
 // ─── Commerce Policy ────────────────────────────────────────
 
 export const COMMERCE_DEFAULTS = {
-  maxPerTransaction: 1.0,
-  dailyLimit: 10.0,
-  autoApproveBelow: 0.01,
-  requireApprovalAbove: 0.01,
+  maxPerTransaction: 10.0,
+  dailyLimit: 100.0,
+  autoApproveBelow: 1.0,
+  requireApprovalAbove: 1.0,
 } as const;
 
 // ─── Demo Server Ports ──────────────────────────────────────

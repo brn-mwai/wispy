@@ -3,11 +3,14 @@
  *
  * Steps:
  * 1. Welcome screen with ASCII art
- * 2. API key configuration
+ * 2. API key configuration (+ Telegram, Autonomous Mode)
  * 3. Theme selection
  * 4. Agent selection
  * 5. Integration selection
- * 6. Summary
+ * 6. MCP Servers
+ * 7. x402 Agentic Commerce
+ * 8. Voice/TTS
+ * 9. Summary
  */
 
 import * as readline from "readline";
@@ -400,7 +403,91 @@ export async function runSetupWizard(opts: {
         : MCP_SERVERS.filter((m) => m.default);
     }
 
-    // ── Step 7: Voice/TTS Setup (Edge TTS) ─────────────
+    // ── Step 7: x402 Agentic Commerce ──────────────────
+    console.clear();
+    console.log(WISPY_ASCII);
+    console.log(skyBold(`  ${chalk.hex('#00FFA3')("▸")} x402 Agentic Commerce\n`));
+    console.log(dim("  Enable your AI agent to make autonomous micro-payments"));
+    console.log(dim("  using the x402 HTTP payment protocol on SKALE network.\n"));
+    console.log(`  ${sky("Features:")}`);
+    console.log(`  ${chalk.hex('#00FFA3')("•")} Autonomous API payments (HTTP 402 handling)`);
+    console.log(`  ${chalk.hex('#00FFA3')("•")} Budget controls & spend tracking`);
+    console.log(`  ${chalk.hex('#00FFA3')("•")} On-chain settlement on SKALE (gasless)`);
+    console.log(`  ${chalk.hex('#00FFA3')("•")} AP2 mandate flow & DeFi trading`);
+    console.log("");
+
+    const existingAgentKey = process.env.AGENT_PRIVATE_KEY;
+    let agentPrivateKey = "";
+    let commerceEnabled = false;
+
+    if (existingAgentKey) {
+      const masked = existingAgentKey.slice(0, 6) + "..." + existingAgentKey.slice(-4);
+      console.log(green(`  ✓ Found wallet key: ${masked}\n`));
+      agentPrivateKey = existingAgentKey;
+      commerceEnabled = true;
+    } else {
+      const enableChoice = await ask(rl, sky("  Enable x402 commerce? [Y/n]: "));
+
+      if (!enableChoice.trim() || enableChoice.trim().toLowerCase().startsWith("y")) {
+        console.log("");
+        console.log(dim("  You need an Ethereum private key for the agent wallet."));
+        console.log(dim("  This wallet will hold USDC on SKALE for micro-payments.\n"));
+        console.log(`  ${sky("1)")} ${bold("Generate a new wallet")} ${dim("(Quick start)")}`);
+        console.log(`  ${sky("2)")} ${bold("Enter existing private key")} ${dim("(Use your own)")}`);
+        console.log("");
+
+        const keyChoice = await ask(rl, sky("  Select [1/2] (default: 1): "));
+
+        if (keyChoice.trim() === "2") {
+          const keyInput = await ask(rl, sky("  Enter private key (0x...): "));
+          agentPrivateKey = keyInput.trim();
+          if (agentPrivateKey && !agentPrivateKey.startsWith("0x")) {
+            agentPrivateKey = "0x" + agentPrivateKey;
+          }
+        } else {
+          // Generate a new key using viem
+          try {
+            const { generatePrivateKey, privateKeyToAccount } = await import("viem/accounts");
+            agentPrivateKey = generatePrivateKey();
+            const account = privateKeyToAccount(agentPrivateKey as `0x${string}`);
+            console.log("");
+            console.log(green(`  ✓ Generated new wallet!`));
+            console.log(`  ${dim("Address:")} ${sky(account.address)}`);
+            console.log(yellowBright(`  ⚠ Save your private key securely. It will be stored in .env`));
+          } catch {
+            console.log(yellowBright("  ⚠ Could not generate key (viem not available)."));
+            console.log(dim("  Add AGENT_PRIVATE_KEY=0x... to .env manually.\n"));
+          }
+        }
+
+        if (agentPrivateKey) {
+          commerceEnabled = true;
+        }
+      } else {
+        console.log(dim("\n  Skipped. Enable later by adding AGENT_PRIVATE_KEY to .env\n"));
+      }
+    }
+
+    // Optional CDP wallet (advanced)
+    let cdpKeyName = process.env.CDP_API_KEY_NAME || "";
+    let cdpPrivateKey = process.env.CDP_PRIVATE_KEY || "";
+
+    if (commerceEnabled && !cdpKeyName) {
+      console.log("");
+      console.log(dim("  Optional: Coinbase Developer Platform (CDP) wallet"));
+      console.log(dim("  Provides custodial wallet management. Skip if unsure.\n"));
+      const cdpChoice = await ask(rl, sky("  Configure CDP wallet? [y/N]: "));
+
+      if (cdpChoice.trim().toLowerCase().startsWith("y")) {
+        console.log(dim("\n  Get credentials at: https://portal.cdp.coinbase.com/\n"));
+        cdpKeyName = (await ask(rl, sky("  CDP API Key Name: "))).trim();
+        cdpPrivateKey = (await ask(rl, sky("  CDP Private Key: "))).trim();
+      }
+    }
+
+    await ask(rl, dim("\n  Press Enter to continue..."));
+
+    // ── Step 8: Voice/TTS Setup (Edge TTS) ─────────────
     console.clear();
     console.log(WISPY_ASCII);
     console.log(skyBold(`  ${chalk.hex('#FF6B6B')("▸")} Voice Setup (Natural TTS)\n`));
@@ -534,7 +621,7 @@ export async function runSetupWizard(opts: {
         whatsapp: { enabled: false },
       },
       browser: { enabled: true },
-      wallet: { enabled: false, chain: "base-sepolia" },
+      wallet: { enabled: commerceEnabled, chain: "skale-bite-sandbox" },
       memory: { embeddingDimensions: 768, heartbeatIntervalMinutes: 30, hybridSearch: true },
       security: { requireApprovalForExternal: !autonomousMode, allowedGroups: [] as string[], autonomousMode },
       thinking: { defaultLevel: "medium", costAware: true },
@@ -581,12 +668,25 @@ export async function runSetupWizard(opts: {
       }
     }
 
+    // Add x402 commerce keys
+    if (agentPrivateKey && !existingAgentKey) {
+      if (!envContent.includes("AGENT_PRIVATE_KEY=")) {
+        envContent += `\n\n# x402 Agentic Commerce\nAGENT_PRIVATE_KEY=${agentPrivateKey}`;
+      }
+    }
+    if (cdpKeyName && !envContent.includes("CDP_API_KEY_NAME=")) {
+      envContent += `\nCDP_API_KEY_NAME=${cdpKeyName}`;
+    }
+    if (cdpPrivateKey && !envContent.includes("CDP_PRIVATE_KEY=")) {
+      envContent += `\nCDP_PRIVATE_KEY=${cdpPrivateKey}`;
+    }
+
     // Write .env if we have content
     if (envContent.trim()) {
       fs.writeFileSync(envPath, envContent.trim() + "\n");
     }
 
-    // ── Step 7: Summary ──────────────────────────────────
+    // ── Step 9: Summary ──────────────────────────────────
     console.clear();
     console.log(WISPY_ASCII);
     console.log(skyBold(`  ${chalk.green("✓")} Setup complete!\n`));
@@ -616,11 +716,16 @@ export async function runSetupWizard(opts: {
           ? green("✓ Edge TTS") + dim(" (natural voice)")
           : dim("Not installed"));
 
+    const commerceDisplay = commerceEnabled
+      ? green("✓ Enabled") + dim(` (${cdpKeyName ? "CDP wallet" : "raw key"})`)
+      : dim("Not configured");
+
     console.log(`  ${dim("AI Provider:")}  ${aiDisplay}`);
     console.log(`  ${dim("Mode:")}         ${modeDisplay}`);
     console.log(`  ${dim("Theme:")}        ${themeDisplay}`);
     console.log(`  ${dim("Agents:")}       ${agentsDisplay}`);
     console.log(`  ${dim("Telegram:")}     ${telegramDisplay}`);
+    console.log(`  ${dim("x402 Commerce:")} ${commerceDisplay}`);
     console.log(`  ${dim("Voice:")}        ${voiceDisplay}`);
     console.log(`  ${dim("MCP Servers:")}  ${mcpDisplay}`);
     console.log(`  ${dim("Integrations:")} ${intDisplay}`);

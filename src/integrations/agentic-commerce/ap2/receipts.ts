@@ -138,60 +138,61 @@ export function formatReceiptJSON(record: AP2TransactionRecord): string {
   return JSON.stringify(record, null, 2);
 }
 
-/** Format a transaction record as human-readable markdown */
+/** Format a transaction record as CLI-styled text */
 export function formatReceiptMarkdown(record: AP2TransactionRecord): string {
+  const status = record.receipt.status === "success" ? "SETTLED" : "FAILED";
+
   const lines: string[] = [
-    `## AP2 Transaction Record`,
-    ``,
-    `### Intent`,
-    `- **ID:** \`${record.intent.id}\``,
-    `- **Agent:** \`${record.intent.agentId}\``,
-    `- **Description:** ${record.intent.description}`,
-    `- **Max Budget:** $${record.intent.maxBudget} USDC`,
-    `- **Created:** ${record.intent.createdAt}`,
-    ``,
-    `### Cart`,
-    `- **ID:** \`${record.cart.id}\``,
-    `- **Merchant:** ${record.cart.merchantName} (\`${record.cart.merchantAddress.slice(0, 10)}...\`)`,
-    `- **Items:**`,
+    `  ┌─ AP2 Transaction ─────────────────`,
+    `  │`,
+    `  │ Intent`,
+    `  │   ID:          ${record.intent.id.slice(0, 20)}...`,
+    `  │   Agent:       ${record.intent.agentId.slice(0, 12)}...`,
+    `  │   Description: ${record.intent.description}`,
+    `  │   Max Budget:  $${record.intent.maxBudget} USDC`,
+    `  │`,
+    `  │ Cart`,
+    `  │   ID:       ${record.cart.id.slice(0, 20)}...`,
+    `  │   Merchant: ${record.cart.merchantName} (${record.cart.merchantAddress.slice(0, 10)}...)`,
   ];
 
   for (const item of record.cart.items) {
-    lines.push(`  - ${item.name}: $${item.price} USDC x${item.quantity} — ${item.description}`);
+    lines.push(`  │   ├─ ${item.name}: $${item.price} x${item.quantity}`);
   }
-  lines.push(`- **Total:** $${record.cart.total} USDC`);
-  lines.push(``);
+  lines.push(`  │   Total: $${record.cart.total} USDC`);
 
-  lines.push(`### Payment Authorization`);
-  lines.push(`- **ID:** \`${record.payment.id}\``);
-  lines.push(`- **Payer:** \`${record.payment.payerAddress.slice(0, 10)}...\``);
-  lines.push(`- **Payee:** \`${record.payment.payeeAddress.slice(0, 10)}...\``);
-  lines.push(`- **Amount:** $${record.payment.amount} USDC`);
-  lines.push(`- **Network:** ${record.payment.network}`);
-  lines.push(`- **Authorized by:** \`${record.payment.authorizedBy.slice(0, 10)}...\``);
-  lines.push(``);
-
-  lines.push(`### Receipt`);
-  lines.push(`- **ID:** \`${record.receipt.id}\``);
-  lines.push(`- **Status:** ${record.receipt.status === "success" ? "Settled" : "FAILED"}`);
-  lines.push(`- **Tx Hash:** \`${record.receipt.txHash}\``);
+  lines.push(
+    `  │`,
+    `  │ Payment`,
+    `  │   ID:     ${record.payment.id.slice(0, 20)}...`,
+    `  │   Payer:  ${record.payment.payerAddress.slice(0, 12)}...`,
+    `  │   Payee:  ${record.payment.payeeAddress.slice(0, 12)}...`,
+    `  │   Amount: $${record.payment.amount} USDC`,
+    `  │   Net:    ${record.payment.network}`,
+    `  │`,
+    `  │ Receipt  [${status}]`,
+    `  │   ID:     ${record.receipt.id.slice(0, 20)}...`,
+    `  │   Tx:     ${record.receipt.txHash}`,
+  );
   if (record.receipt.blockNumber) {
-    lines.push(`- **Block:** ${record.receipt.blockNumber}`);
+    lines.push(`  │   Block:  ${record.receipt.blockNumber}`);
   }
-  lines.push(`- **Settled at:** ${record.receipt.settledAt}`);
-  lines.push(`- **Delivery confirmed:** ${record.receipt.deliveryConfirmed ? "Yes" : "No"}`);
+  lines.push(`  │   Time:   ${record.receipt.settledAt.slice(0, 19)}`);
   if (record.receipt.errorMessage) {
-    lines.push(`- **Error:** ${record.receipt.errorMessage}`);
+    lines.push(`  │   Error:  ${record.receipt.errorMessage}`);
   }
-  lines.push(``);
 
-  lines.push(`### Timeline`);
-  for (const event of record.timeline) {
-    lines.push(`1. **${event.event}** (${event.timestamp.slice(11, 19)}) — ${event.actor}`);
-    if (event.details) {
-      lines.push(`   ${event.details}`);
+  lines.push(`  │`, `  │ Timeline`);
+  for (let i = 0; i < record.timeline.length; i++) {
+    const ev = record.timeline[i];
+    const isLast = i === record.timeline.length - 1;
+    const c = isLast ? "╰" : "├";
+    lines.push(`  │   ${c}─ ${ev.event} (${ev.timestamp.slice(11, 19)}) ${ev.actor}`);
+    if (ev.details) {
+      lines.push(`  │   ${isLast ? " " : "│"}  ${ev.details.slice(0, 70)}`);
     }
   }
 
+  lines.push(`  └────────────────────────────────────`);
   return lines.join("\n");
 }

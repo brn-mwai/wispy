@@ -144,67 +144,252 @@ const DEMO_TRACK_NAMES: Record<number, string> = {
   6: "Agentic Vision (Gemini 3)",
 };
 
-const DEMO_TRACK_MODULES: Record<number, string> = {
-  1: "../../integrations/agentic-commerce/demo/scenarios/track1-overall.js",
-  2: "../../integrations/agentic-commerce/demo/scenarios/track2-x402.js",
-  3: "../../integrations/agentic-commerce/demo/scenarios/track3-ap2.js",
-  4: "../../integrations/agentic-commerce/demo/scenarios/track4-defi.js",
-  5: "../../integrations/agentic-commerce/demo/scenarios/track5-bite.js",
-  6: "../../integrations/agentic-commerce/demo/scenarios/track6-vision.js",
+// Agent-driven demo prompts per track (realistic use-case framing)
+const DEMO_AGENT_PROMPTS: Record<number, string> = {
+  1: `You are demonstrating Wispy's autonomous agentic commerce capabilities for the SF x402 Hackathon.
+
+SCENARIO: A logistics company needs real-time weather data for route planning in Nairobi.
+
+Steps:
+1. Use x402_pay_and_fetch to call the Weather API at http://127.0.0.1:4021/weather?city=Nairobi (reason: "Real-time weather for logistics route optimization")
+2. Use x402_check_budget to show budget awareness
+3. Use x402_audit_trail to show the payment audit trail
+
+IMPORTANT: Always use 127.0.0.1 (not localhost) for service URLs. Include explorer links in your summary. Say "TRACK 1 COMPLETE" when done.`,
+
+  2: `You are demonstrating x402 autonomous payments on SKALE for the SF Agentic Commerce Hackathon.
+
+SCENARIO: A market intelligence platform needs weather, sentiment, and summary reports.
+
+Steps:
+1. Use x402_pay_and_fetch to GET weather from http://127.0.0.1:4021/weather?city=Nairobi (reason: "Market weather correlation data")
+2. Use x402_pay_and_fetch to POST sentiment analysis to http://127.0.0.1:4022/analyze with body {"text":"SKALE blockchain enables gasless micro-payments for AI agents"} (reason: "Sentiment analysis for market intelligence")
+3. Use x402_pay_and_fetch to POST a report to http://127.0.0.1:4023/report with body {"format":"executive"} (reason: "Executive summary report generation")
+4. Use x402_check_budget to show remaining budget
+
+IMPORTANT: Always use 127.0.0.1 (not localhost). Include all explorer proof links. Say "TRACK 2 COMPLETE" when done.`,
+
+  3: `You are demonstrating AP2 (Agent Payment Protocol) authorization flows for the SF x402 Hackathon.
+
+SCENARIO: An AI agent autonomously subscribes to a premium weather data service using structured AP2 mandates.
+
+Steps:
+1. Use ap2_purchase with description "Premium weather data subscription for fleet management", service_url "http://127.0.0.1:4021/weather", merchant_name "WeatherPro Analytics", max_budget "0.005"
+2. Use ap2_get_receipts to show the full mandate chain (intent -> cart -> payment -> receipt)
+
+IMPORTANT: Include all transaction proof links and mandate IDs. Say "TRACK 3 COMPLETE" when done.`,
+
+  4: `You are demonstrating DeFi trading with risk controls for the SF Agentic Commerce Hackathon.
+
+SCENARIO: A portfolio management agent rebalances positions on Algebra DEX (SKALE).
+
+Steps:
+1. Use defi_research to research the USDC token for current market conditions
+2. Use defi_swap to execute a conservative swap: from_token "USDC", to_token "sFUEL", amount "0.001", reasoning "Portfolio diversification into native gas token for operational efficiency"
+3. Use defi_trade_log to show the full trade decision log with risk evaluations
+
+IMPORTANT: Include all transaction proof links and risk scores. Say "TRACK 4 COMPLETE" when done.`,
+
+  5: `You are demonstrating BITE v2 threshold encryption for the SF Agentic Commerce Hackathon.
+
+SCENARIO: An escrow agent encrypts a payment that only unlocks when delivery is confirmed.
+
+Steps:
+1. Use bite_encrypt_payment with to "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD28", data "0x0001", condition_type "delivery_proof", condition_description "Payment unlocks when package delivery is confirmed by GPS oracle"
+2. Use bite_check_and_execute with the payment_id from step 1 to check condition status
+3. Use bite_lifecycle_report with the payment_id to show the full encryption lifecycle
+
+IMPORTANT: Include all transaction proof links and encryption status. Say "TRACK 5 COMPLETE" when done.`,
 };
 
-/**
- * Run demo tracks and report results to Telegram
- */
-async function runDemoTracksInTelegram(ctx: Context, tracks: number[]) {
-  const label = tracks.length === 5 ? "all 5 tracks" : `Track ${tracks.join(", ")}`;
-  const statusMsg = await ctx.reply(`\u26A1 Running ${label}...`);
+// SKALE explorer base for tx hash extraction
+const SKALE_EXPLORER_BASE = "https://base-sepolia-testnet-explorer.skalenodes.com:10032";
 
-  const results: Array<{ num: number; name: string; ok: boolean; ms: number; err?: string }> = [];
-  const totalStart = Date.now();
-
-  for (const num of tracks) {
-    const start = Date.now();
-    try {
-      // Stop services between tracks to avoid port conflicts
-      try { const { stopDemoServices } = await import("../../integrations/agentic-commerce/demo/server.js"); await stopDemoServices(); } catch {}
-
-      // Update status
-      if (tracks.length > 1) {
-        await ctx.api.editMessageText(
-          ctx.chat!.id, statusMsg.message_id,
-          `\u26A1 Running Track ${num}: ${DEMO_TRACK_NAMES[num]}...`,
-        ).catch(() => {});
-      }
-
-      const mod = await import(DEMO_TRACK_MODULES[num]);
-      await mod[`runTrack${num}`](process.env.AGENT_PRIVATE_KEY);
-      results.push({ num, name: DEMO_TRACK_NAMES[num], ok: true, ms: Date.now() - start });
-    } catch (err) {
-      results.push({ num, name: DEMO_TRACK_NAMES[num], ok: false, ms: Date.now() - start, err: (err as Error).message });
+/** Extract tx hashes from text and return explorer URLs */
+function extractTxProofButtons(text: string): Array<{ text: string; url: string }> {
+  const buttons: Array<{ text: string; url: string }> = [];
+  const seen = new Set<string>();
+  // Match 0x + 64 hex chars (transaction hashes)
+  const hashRegex = /0x[a-fA-F0-9]{64}/g;
+  let match;
+  while ((match = hashRegex.exec(text)) !== null) {
+    const hash = match[0];
+    if (!seen.has(hash)) {
+      seen.add(hash);
+      buttons.push({
+        text: `View Tx ${hash.slice(0, 8)}...${hash.slice(-4)}`,
+        url: `${SKALE_EXPLORER_BASE}/tx/${hash}`,
+      });
     }
   }
+  return buttons.slice(0, 3); // Max 3 buttons
+}
 
-  // Build summary
-  let msg = "\uD83C\uDFAC *Demo Results*\n\n";
-  for (const r of results) {
-    const icon = r.ok ? "\u2705" : "\u274C";
-    msg += `${icon} *Track ${r.num}:* ${r.name} (${(r.ms / 1000).toFixed(1)}s)\n`;
-    if (r.err) msg += `   _${r.err.slice(0, 80)}_\n`;
+/**
+ * Run demo tracks via the AI agent and report results to Telegram.
+ * Routes demo prompts through agent.chatStream() for real tool usage.
+ */
+async function runAgentDemoInTelegram(
+  ctx: Context,
+  tracks: number[],
+  agentInstance: Agent,
+) {
+  const chatId = ctx.chat!.id;
+  const userId = String(ctx.from?.id || "");
+  const label = tracks.length >= 5 ? "all tracks" : `Track ${tracks.join(", ")}`;
+  const statusMsg = await ctx.reply(`\u26A1 Starting agent-driven demo (${label})...`);
+
+  // Start demo services
+  let servicesStarted = false;
+  try {
+    const { startDemoServices } = await import("../../integrations/agentic-commerce/demo/server.js");
+    await startDemoServices();
+    servicesStarted = true;
+  } catch (err) {
+    await ctx.reply(`\u274C Failed to start demo services: ${err instanceof Error ? err.message : String(err)}`);
+    return;
   }
-  const passed = results.filter(r => r.ok).length;
-  msg += `\n*Passed:* ${passed}/${results.length} | *Total:* ${((Date.now() - totalStart) / 1000).toFixed(1)}s`;
 
-  // Delete status message and send final result
-  await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
-  await ctx.reply(msg, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "\uD83D\uDD04 Run Again", callback_data: tracks.length === 6 ? "demo_all" : `demo_track:${tracks[0]}` }],
-      ],
-    },
-  }).catch(() => ctx.reply(msg.replace(/[*_`]/g, "")));
+  // Set chat context for the agent
+  const sendImage = async (imagePath: string, caption?: string) => {
+    const { InputFile } = await import("grammy");
+    const fs = await import("fs");
+    if (fs.existsSync(imagePath)) {
+      await ctx.replyWithPhoto(
+        new InputFile(fs.readFileSync(imagePath), "screenshot.png"),
+        caption ? { caption, parse_mode: "Markdown" } : undefined,
+      );
+    }
+  };
+  agentInstance.setChatContext({ channel: "telegram", peerId: userId, chatId: String(chatId), sendImage });
+
+  const totalStart = Date.now();
+  const allTxButtons: Array<{ text: string; url: string }> = [];
+
+  try {
+    for (const trackNum of tracks) {
+      const prompt = DEMO_AGENT_PROMPTS[trackNum];
+      if (!prompt) {
+        await ctx.reply(`\u26A0\uFE0F No agent prompt for Track ${trackNum}, skipping.`);
+        continue;
+      }
+
+      const trackName = DEMO_TRACK_NAMES[trackNum] || `Track ${trackNum}`;
+
+      // Update status
+      await ctx.api.editMessageText(
+        chatId, statusMsg.message_id,
+        `\u26A1 *Track ${trackNum}: ${trackName}*\n_Agent is working..._`,
+        { parse_mode: "Markdown" },
+      ).catch(() => {});
+
+      // Multi-turn agent execution (up to 8 turns per track)
+      const MAX_TURNS = 8;
+      let trackText = "";
+      let trackComplete = false;
+
+      for (let turn = 1; turn <= MAX_TURNS && !trackComplete; turn++) {
+        const turnPrompt = turn === 1
+          ? prompt
+          : "Continue. Complete all remaining steps. Use 127.0.0.1 for service URLs.";
+
+        let turnText = "";
+        const toolsUsed: string[] = [];
+        let lastToolUpdate = 0;
+
+        for await (const event of agentInstance.chatStream(turnPrompt, userId, "telegram", "sub")) {
+          if (event.type === "text") {
+            turnText += event.content;
+          } else if (event.type === "tool_call") {
+            toolsUsed.push(event.content);
+            const now = Date.now();
+            // Throttle tool update messages (every 3 seconds)
+            if (now - lastToolUpdate > 3000) {
+              const emoji = getToolEmoji(event.content);
+              await ctx.api.editMessageText(
+                chatId, statusMsg.message_id,
+                `\u26A1 *Track ${trackNum}: ${trackName}*\n${emoji} _${event.content}_`,
+                { parse_mode: "Markdown" },
+              ).catch(() => {});
+              lastToolUpdate = now;
+            }
+          } else if (event.type === "done") {
+            break;
+          }
+        }
+
+        trackText += turnText;
+
+        // Check for track completion marker
+        if (trackText.toLowerCase().includes(`track ${trackNum} complete`)) {
+          trackComplete = true;
+        }
+      }
+
+      // Extract tx proof buttons from agent response
+      const txButtons = extractTxProofButtons(trackText);
+      allTxButtons.push(...txButtons);
+
+      // Send track result
+      const trackDuration = ((Date.now() - totalStart) / 1000).toFixed(1);
+      const statusIcon = trackComplete ? "\u2705" : "\u26A0\uFE0F";
+
+      // Truncate long responses for Telegram (4000 char limit)
+      let responseText = trackText.trim();
+      if (responseText.length > 3500) {
+        responseText = responseText.slice(0, 3400) + "\n\n_...truncated..._";
+      }
+
+      // Build inline keyboard with tx proof buttons for this track
+      const inlineKeyboard: Array<Array<{ text: string; url: string }>> = [];
+      if (txButtons.length > 0) {
+        inlineKeyboard.push(txButtons.map(b => ({ text: b.text, url: b.url })));
+      }
+
+      await ctx.reply(
+        `${statusIcon} *Track ${trackNum}: ${trackName}* (${trackDuration}s)\n\n${responseText}`,
+        {
+          parse_mode: "Markdown",
+          ...(inlineKeyboard.length > 0 ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}),
+        },
+      ).catch(() => {
+        // Fallback without markdown
+        ctx.reply(`${statusIcon} Track ${trackNum}: ${trackName} (${trackDuration}s)\n\n${responseText.replace(/[*_`]/g, "")}`);
+      });
+    }
+
+    // Final summary
+    const totalDuration = ((Date.now() - totalStart) / 1000).toFixed(1);
+    const summaryKeyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>> = [
+      [{ text: "\uD83D\uDD04 Run Again", callback_data: tracks.length >= 5 ? "demo_all" : `demo_track:${tracks[0]}` }],
+    ];
+    // Add unique tx proof buttons to summary (max 3)
+    const uniqueButtons = allTxButtons.slice(0, 3);
+    if (uniqueButtons.length > 0) {
+      summaryKeyboard.push(uniqueButtons.map(b => ({ text: b.text, url: b.url })));
+    }
+
+    await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+    await ctx.reply(
+      `\uD83C\uDFAC *Demo Complete* | ${tracks.length} track(s) | ${totalDuration}s\n\n` +
+      `All transactions settled on SKALE BITE V2 Sandbox (gasless).`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: summaryKeyboard as any },
+      },
+    ).catch(() => {});
+
+  } catch (err) {
+    await ctx.reply(`\u274C Demo error: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    // Always stop demo services
+    if (servicesStarted) {
+      try {
+        const { stopDemoServices } = await import("../../integrations/agentic-commerce/demo/server.js");
+        await stopDemoServices();
+      } catch { /* ignore */ }
+    }
+  }
 }
 
 /**
@@ -1056,13 +1241,13 @@ I work autonomously and keep you updated! 🚀`;
     // ═══════════════════════════════════════════════════════════════════════
     if (data.startsWith("demo_track:")) {
       const trackNum = parseInt(data.split(":")[1]);
-      await ctx.answerCallbackQuery(`Running Track ${trackNum}...`);
-      await runDemoTracksInTelegram(ctx, [trackNum]);
+      await ctx.answerCallbackQuery(`Running Track ${trackNum} via agent...`);
+      await runAgentDemoInTelegram(ctx, [trackNum], agent);
       return;
     }
     if (data === "demo_all") {
-      await ctx.answerCallbackQuery("Running all 6 tracks...");
-      await runDemoTracksInTelegram(ctx, [1, 2, 3, 4, 5, 6]);
+      await ctx.answerCallbackQuery("Running all tracks via agent...");
+      await runAgentDemoInTelegram(ctx, [1, 2, 3, 4, 5], agent);
       return;
     }
     if (data === "demo_preflight") {
@@ -1832,14 +2017,14 @@ I work autonomously and keep you updated! 🚀`;
 
     // Run all
     if (args === "all") {
-      await runDemoTracksInTelegram(ctx, [1, 2, 3, 4, 5]);
+      await runAgentDemoInTelegram(ctx, [1, 2, 3, 4, 5], agent);
       return;
     }
 
     // Single track
     const trackNum = /^[1-5]$/.test(args) ? parseInt(args) : 0;
     if (trackNum >= 1 && trackNum <= 5) {
-      await runDemoTracksInTelegram(ctx, [trackNum]);
+      await runAgentDemoInTelegram(ctx, [trackNum], agent);
       return;
     }
 

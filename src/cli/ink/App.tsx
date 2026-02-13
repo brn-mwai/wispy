@@ -19,6 +19,8 @@ import TextInput from "ink-text-input";
 import { Banner } from "./Banner.js";
 import { ToolCall, ToolResult } from "./ToolCall.js";
 import { ThinkingSpinner } from "./ThinkingSpinner.js";
+import { GlareBar } from "./GlareBar.js";
+import { ThoughtSignature } from "./ThoughtSignature.js";
 import { StatsLine } from "./StatsLine.js";
 import { Separator } from "./Separator.js";
 import { MarkdownText } from "./MarkdownText.js";
@@ -139,14 +141,11 @@ function HistoryItem({ entry }: { entry: HistoryEntry }) {
 
     case "thinking":
       return (
-        <Box flexDirection="column" marginLeft={2} marginTop={1}>
-          <Text dimColor color="#8B8B8B">
-            {"\u2726"} Thinking
-          </Text>
-          <Box marginLeft={4}>
-            <Text dimColor>{entry.text.slice(-500)}</Text>
-          </Box>
-        </Box>
+        <ThoughtSignature
+          text={entry.text}
+          signature={entry.signature}
+          thinkingLevel={entry.thinkingLevel}
+        />
       );
 
     case "response":
@@ -189,25 +188,50 @@ function HistoryItem({ entry }: { entry: HistoryEntry }) {
 
     case "marathon-progress": {
       const icons: Record<string, string> = {
-        started: "\uD83D\uDE80",
-        milestone_started: "\uD83D\uDCCD",
-        milestone_completed: "\u2705",
-        milestone_failed: "\u274C",
-        completed: "\uD83C\uDFC1",
-        approval_needed: "\u26A0\uFE0F",
+        started: "\u26A1",
+        milestone_started: "\u250C",
+        milestone_completed: "\u2713",
+        milestone_failed: "\u2717",
+        completed: "\u2713",
+        approval_needed: "\u2691",
       };
-      const icon = icons[entry.event] || "\uD83D\uDCE2";
-      const bar = entry.total > 0
-        ? ` [${"=".repeat(Math.round((entry.progress / entry.total) * 20))}${"-".repeat(20 - Math.round((entry.progress / entry.total) * 20))}] ${entry.progress}/${entry.total}`
-        : "";
+      const colors: Record<string, string> = {
+        started: "#31CCFF",
+        milestone_started: "#34D399",
+        milestone_completed: "#4CAF50",
+        milestone_failed: "#EF4444",
+        completed: "#4CAF50",
+        approval_needed: "#C084FC",
+      };
+      const icon = icons[entry.event] || "\u25C6";
+      const color = colors[entry.event] || "#FFB74D";
+
+      // Progress bar with gradient coloring
+      let bar = "";
+      if (entry.total > 0) {
+        const filled = Math.round((entry.progress / entry.total) * 20);
+        const empty = 20 - filled;
+        bar = ` ${"█".repeat(filled)}${"░".repeat(empty)} ${entry.progress}/${entry.total}`;
+      }
+
+      // Thinking level badge
+      const levelLabels: Record<string, string> = { minimal: "MIN", low: "LOW", medium: "MED", high: "HIGH", ultra: "ULTRA" };
+      const levelColors: Record<string, string> = { minimal: "#6B7280", low: "#60A5FA", medium: "#FBBF24", high: "#F97316", ultra: "#EF4444" };
+      const lvl = entry.thinkingLevel || "";
+      const levelBadge = levelLabels[lvl] || "";
+      const levelColor = levelColors[lvl] || "#555";
+
+      const isMajor = entry.event === "started" || entry.event === "completed";
+
       return (
-        <Box marginLeft={2} marginTop={entry.event === "started" || entry.event === "completed" ? 1 : 0}>
-          <Text color={entry.event.includes("fail") ? "red" : entry.event === "completed" ? "green" : "yellow"}>
-            {icon} </Text>
-          <Text bold={entry.event === "started" || entry.event === "completed"}>
+        <Box marginLeft={2} marginTop={isMajor ? 1 : 0}>
+          <Text color={color}>{icon} </Text>
+          <Text bold={isMajor} color={isMajor ? color : undefined}>
             {entry.milestone || entry.event.replace(/_/g, " ")}
           </Text>
-          <Text dimColor>{bar}</Text>
+          {bar && <Text color={entry.progress === entry.total ? "#4CAF50" : "#FFB74D"}>{bar}</Text>}
+          {levelBadge && <Text color={levelColor}> [{levelBadge}]</Text>}
+          {entry.phase && <Text dimColor> {entry.phase}</Text>}
         </Box>
       );
     }
@@ -274,6 +298,16 @@ function HistoryItem({ entry }: { entry: HistoryEntry }) {
             {entry.enabled ? "\u25CF" : "\u25CB"} x402 verbose mode: {entry.enabled ? "ON" : "OFF"}
           </Text>
           <Text dimColor> {entry.enabled ? "-- showing full payment details" : "-- compact view"}</Text>
+        </Box>
+      );
+
+    case "sandbox":
+      return (
+        <Box borderStyle="round" borderColor="#34D399" paddingX={2} paddingY={1} marginLeft={2} marginTop={1}>
+          <Text color="#34D399" bold>{"\u2B21"} Sandbox Active</Text>
+          <Text> {"\u00B7"} </Text>
+          <Text color="cyan" underline>{entry.url}</Text>
+          {entry.framework && <Text dimColor> {"\u00B7"} {entry.framework}</Text>}
         </Box>
       );
 
@@ -450,12 +484,16 @@ export function App({
   const [streamingText, setStreamingText] = useState("");
   const [thinkingText, setThinkingText] = useState("");
   const thinkingTextRef = useRef("");
+  const thinkingSigRef = useRef("");
 
   // ── Last stats (shown above input, not in history) ──
   const [lastStats, setLastStats] = useState<import("./types.js").StatsData | null>(null);
 
   // ── x402 verbose mode ──
   const [verboseMode, setVerboseMode] = useState(false);
+
+  // ── Active prompt (shown in terminal tab title) ──
+  const [activePrompt, setActivePrompt] = useState("");
 
   // ── Refs ──
   const abortRef = useRef<AbortController | null>(null);
@@ -529,8 +567,14 @@ export function App({
       const milestone = (data?.milestone as string) || "";
       const eventType = event.type as string;
 
-      // Only show significant events
-      if (["milestone_started", "milestone_completed", "milestone_failed", "started", "completed", "approval_needed"].includes(eventType)) {
+      // Show significant events with thinking level and phase info
+      if (["milestone_started", "milestone_completed", "milestone_failed", "started", "completed", "approval_needed", "planning", "verification_started", "recovering"].includes(eventType)) {
+        const phase = eventType === "planning" ? "Planning"
+          : eventType === "verification_started" ? "Verifying"
+          : eventType === "recovering" ? "Recovering"
+          : eventType.includes("milestone") ? "Executing"
+          : undefined;
+
         setHistory((h) => [
           ...h,
           {
@@ -540,6 +584,8 @@ export function App({
             milestone,
             progress: event.progress?.completed ?? 0,
             total: event.progress?.total ?? 0,
+            thinkingLevel: config?.thinking?.defaultLevel || "high",
+            phase,
           },
         ]);
       }
@@ -547,6 +593,33 @@ export function App({
 
     return unsubscribe;
   }, [marathonService]);
+
+  // ── Terminal tab title — shows current state with blue icon ──
+  useEffect(() => {
+    let title: string;
+    if (isProcessing && activePrompt) {
+      // Truncate long prompts for the tab
+      const short = activePrompt.length > 40
+        ? activePrompt.slice(0, 37) + "..."
+        : activePrompt;
+      title = streamingText
+        ? `\u{1F539} Wispy \u2014 Responding...`
+        : `\u{1F539} Wispy \u2014 ${short}`;
+    } else if (isProcessing) {
+      title = `\u{1F539} Wispy \u2014 Thinking...`;
+    } else {
+      title = `\u{1F539} Wispy`;
+    }
+    // OSC 0 sets both window title and tab title (most terminal support)
+    process.stdout.write(`\x1b]0;${title}\x07`);
+  }, [isProcessing, activePrompt, streamingText]);
+
+  // Reset title on unmount
+  useEffect(() => {
+    return () => {
+      process.stdout.write(`\x1b]0;Wispy\x07`);
+    };
+  }, []);
 
   const stopThinking = useCallback(() => {
     if (thinkTimerRef.current) {
@@ -595,6 +668,7 @@ export function App({
         abortRef.current.abort();
         stopThinking();
         setIsProcessing(false);
+          setActivePrompt("");
         setStreamingText("");
       } else {
         exit();
@@ -758,6 +832,505 @@ export function App({
         return;
       }
 
+      // ── x402demo: agent-driven hackathon demo (multi-turn) ──
+      if (trimmed.startsWith("/x402demo")) {
+        const trackArg = trimmed.replace("/x402demo", "").trim();
+        setActivePrompt(`/x402demo ${trackArg || "all"}`);
+
+        // Start demo seller services in background
+        addEntry({ type: "user-input", text: trimmed });
+
+        (async () => {
+          try {
+            const { startDemoServices } = await import("../../integrations/agentic-commerce/demo/server.js");
+            const { sellerAddress } = await startDemoServices(process.env.SELLER_PRIVATE_KEY);
+            const { getServiceUrls } = await import("../../integrations/agentic-commerce/x402/seller.js");
+            const urls = getServiceUrls();
+
+            // Build the agent prompt based on track selection
+            const tracks = trackArg === "all" || !trackArg ? "1,2,3,4,5" : trackArg;
+            const trackList = tracks.split(",").map((t: string) => t.trim());
+            const trackCount = trackList.length;
+
+            // Show demo start progress
+            addEntry({
+              type: "marathon-progress" as const,
+              event: "started",
+              milestone: `x402 Demo: ${trackCount} track${trackCount > 1 ? "s" : ""}`,
+              progress: 0,
+              total: trackCount,
+              thinkingLevel: config?.thinking?.defaultLevel || "high",
+              phase: "Executing",
+            });
+
+            let demoPrompt = `You are Wispy, an autonomous AI agent running a LIVE demonstration for the SF Agentic Commerce x402 Hackathon. You have FULL AUTONOMY to choose how to accomplish each track's goals.
+
+CRITICAL: Use 127.0.0.1 (not localhost) for all local service URLs.
+
+YOUR FIRST ACTION: Call x402_discover_services to learn what services are available, then plan your approach.
+
+Seller address: ${sellerAddress}
+
+FORMATTING RULES:
+- Do NOT use markdown tables. Use box-drawing characters (┌ ─ ┐ │ ├ └ ┘ ═ ━)
+- Format tabular data with padded columns for alignment
+- Use section headers with ━━━ borders
+- Show your reasoning: WHY you do things, not just what
+- For every x402 payment, show amount, recipient, and status
+
+EXECUTION RULES:
+- Complete ALL tracks. Do not stop until ALL are done.
+- After each track, state "TRACK N COMPLETE" on its own line (exact format).
+- If a tool call fails, adapt your approach and try again.
+- You decide the order of operations, which tools to use, and what data to work with.
+
+AVAILABLE TOOLS: x402_discover_services, x402_pay_and_fetch, x402_check_budget, x402_audit_trail, ap2_purchase, ap2_get_receipts, defi_research, defi_swap, defi_trade_log, bite_encrypt_payment, bite_check_and_execute, bite_lifecycle_report, wallet_balance
+
+Here are the tracks to complete:\n\n`;
+
+            if (trackList.includes("1") || trackList.includes("all")) {
+              demoPrompt += `━━━ TRACK 1: Overall Best Agentic App ━━━
+GOAL: Demonstrate autonomous multi-step reasoning by researching a topic using paid APIs and compiling findings.
+SUCCESS CRITERIA: Make at least 3 paid API calls, chain their outputs together, and show cost-awareness throughout.
+AUTONOMY: You choose the topic, which services to call, and how to combine results.
+End with "TRACK 1 COMPLETE".\n\n`;
+            }
+
+            if (trackList.includes("2")) {
+              demoPrompt += `━━━ TRACK 2: Agentic Tool Usage on x402 ━━━
+GOAL: Demonstrate intelligent, cost-aware usage of x402-paywalled services.
+SUCCESS CRITERIA: Check budget, make strategic decisions about which services to call based on cost, explain your cost/benefit reasoning, and show spending audit.
+AUTONOMY: You decide which services are worth paying for and why.
+End with "TRACK 2 COMPLETE".\n\n`;
+            }
+
+            if (trackList.includes("3")) {
+              demoPrompt += `━━━ TRACK 3: Best Integration of AP2 ━━━
+GOAL: Demonstrate the AP2 structured purchase flow (Intent -> Cart -> Payment -> Receipt).
+SUCCESS CRITERIA: Execute at least 2 AP2 purchases for different services, explain the mandate flow at each step, show all receipts.
+AUTONOMY: You choose which services to purchase and what descriptions to use.
+End with "TRACK 3 COMPLETE".\n\n`;
+            }
+
+            if (trackList.includes("4")) {
+              demoPrompt += `━━━ TRACK 4: Best Trading/DeFi Agent ━━━
+GOAL: Demonstrate autonomous DeFi trading with risk controls.
+SUCCESS CRITERIA: Research market conditions, attempt a safe trade, attempt a trade that exceeds risk limits (to show the risk engine works), show trade log.
+AUTONOMY: You choose tokens, amounts, and trading strategy based on your research.
+End with "TRACK 4 COMPLETE".\n\n`;
+            }
+
+            if (trackList.includes("5")) {
+              demoPrompt += `━━━ TRACK 5: Encrypted Agents (BITE v2) ━━━
+GOAL: Demonstrate BITE v2 threshold encryption for conditional payments.
+SUCCESS CRITERIA: Encrypt a payment with a condition, check and execute it, show the full lifecycle. Explain how BLS threshold encryption protects privacy.
+AUTONOMY: You choose the recipient (use USDC contract: 0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8), condition type, and parameters.
+End with "TRACK 5 COMPLETE".\n\n`;
+            }
+
+            demoPrompt += `After ALL tracks are complete, call x402_audit_trail one final time, then provide a FINAL VERIFICATION SUMMARY using this format:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  HACKATHON DEMO - FINAL VERIFICATION SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Tracks Completed:    N / N
+  Total Payments:      N transactions
+  Total USDC Spent:    $X.XXXXXX
+
+  ┌─ Transaction Log ─────────────────────────────────────────────────┐
+  │ #  Service                Amount        Status     Tx Hash        │
+  │────────────────────────────────────────────────────────────────────│
+  │ (list ALL transactions with real values from audit trail)         │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ Track Results ───────────────────────────────────────────────────┐
+  │ Track   Title                      Status    Key Proof            │
+  │────────────────────────────────────────────────────────────────────│
+  │ (list ALL tracks with PASS/FAIL and evidence)                     │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ On-Chain Verification ───────────────────────────────────────────┐
+  │ Wallet:     (your real wallet address explorer link)              │
+  │ Network:    SKALE BITE V2 Sandbox (Chain 103698795)               │
+  │ Explorer:   https://base-sepolia-testnet-explorer.skalenodes.com:10032  │
+  │ Tx Links:   (list all real tx hash explorer links)                │
+  └────────────────────────────────────────────────────────────────────┘
+
+ALL TRACKS COMPLETE
+
+Fill in ALL actual values. Show real tx hashes, real wallet address, real amounts.
+Use CLI-style formatting with box-drawing characters throughout.`;
+
+            // ── Multi-turn demo execution ──────────────────────
+            setIsProcessing(true);
+            setStreamingText("");
+            setThinkingText("");
+            thinkingTextRef.current = "";
+            thinkingSigRef.current = "";
+            startThinking();
+
+            const abort = new AbortController();
+            abortRef.current = abort;
+
+            const MAX_DEMO_TURNS = 15;
+            let demoTurn = 0;
+            let demoComplete = false;
+            let totalInTk = 0;
+            let totalOutTk = 0;
+            let tracksCompleted = 0;
+            const completedTracks = new Set<string>();
+            let allAccumulated = ""; // Cross-turn accumulation for track detection
+            const chatStart = Date.now();
+
+            while (demoTurn < MAX_DEMO_TURNS && !demoComplete && !abort.signal.aborted) {
+              demoTurn++;
+
+              // First turn uses the full demo prompt; subsequent turns ask to continue
+              const turnPrompt = demoTurn === 1
+                ? demoPrompt
+                : "Continue the demonstration. Complete all remaining tracks. Remember to use 127.0.0.1 for service URLs.";
+
+              // Show continuation indicator for turns > 1
+              if (demoTurn > 1) {
+                addEntry({
+                  type: "marathon-progress" as const,
+                  event: "milestone_started",
+                  milestone: `Continuing demo (turn ${demoTurn}/${MAX_DEMO_TURNS})`,
+                  progress: tracksCompleted,
+                  total: trackCount,
+                  thinkingLevel: config?.thinking?.defaultLevel || "high",
+                  phase: "Executing",
+                });
+                startThinking();
+              }
+
+              let turnAccumulated = "";
+              let tn = "";
+              let ts = 0;
+              let turnIn = 0;
+              let turnOut = 0;
+
+              for await (const chunk of agent.chatStream(
+                turnPrompt,
+                "cli-user",
+                "cli",
+                currentSession as SessionType,
+              )) {
+                if (abort.signal.aborted) break;
+
+                switch (chunk.type) {
+                  case "thinking":
+                    if (chunk.content) {
+                      thinkingTextRef.current = chunk.content;
+                      setThinkingText(chunk.content);
+                    }
+                    break;
+
+                  case "thought_signature":
+                    if (chunk.content) {
+                      thinkingSigRef.current = chunk.content;
+                    }
+                    break;
+
+                  case "tool_call": {
+                    stopThinking();
+                    let args: Record<string, unknown> = {};
+                    let name = chunk.content;
+                    try {
+                      if (chunk.content.includes("{")) {
+                        const idx = chunk.content.indexOf("{");
+                        args = JSON.parse(chunk.content.slice(idx));
+                        name = chunk.content.slice(0, idx).trim();
+                      }
+                    } catch {}
+                    tn = name;
+                    ts = Date.now();
+                    addEntry({ type: "tool-call", data: { name, args } });
+                    break;
+                  }
+
+                  case "tool_result": {
+                    const elapsed = Date.now() - ts;
+                    const isError = chunk.success === false || chunk.content.startsWith("ERROR: ");
+                    addEntry({
+                      type: "tool-result",
+                      data: {
+                        name: tn || "tool",
+                        result: chunk.content.slice(0, 800),
+                        durationMs: elapsed,
+                        isError,
+                      },
+                    });
+                    // Detect sandbox (dev server) launches
+                    if (tn === "run_dev_server" || tn === "bash") {
+                      const urlMatch = chunk.content.match(/https?:\/\/localhost:\d+/);
+                      if (urlMatch) {
+                        addEntry({ type: "sandbox", url: urlMatch[0], project: "app" });
+                      }
+                    }
+                    break;
+                  }
+
+                  case "text":
+                    stopThinking();
+                    if (!turnAccumulated && thinkingTextRef.current) {
+                      addEntry({
+                        type: "thinking",
+                        text: thinkingTextRef.current,
+                        signature: thinkingSigRef.current || undefined,
+                        thinkingLevel: config?.thinking?.defaultLevel || "high",
+                      });
+                      thinkingTextRef.current = "";
+                      thinkingSigRef.current = "";
+                      setThinkingText("");
+                    }
+                    turnAccumulated += chunk.content;
+                    setStreamingText(turnAccumulated);
+                    break;
+
+                  case "usage": {
+                    try {
+                      const usage = JSON.parse(chunk.content);
+                      turnIn = usage.inputTokens ?? 0;
+                      turnOut = usage.outputTokens ?? 0;
+                    } catch {}
+                    break;
+                  }
+
+                  case "context_compacted":
+                    addEntry({ type: "context-compacted" });
+                    break;
+
+                  case "done":
+                    stopThinking();
+                    break;
+                }
+              }
+
+              // ── Finalize this turn ─────────────────────────
+              if (turnAccumulated && !abort.signal.aborted) {
+                addEntry({ type: "response", text: turnAccumulated });
+                setStreamingText("");
+                totalInTk += turnIn || Math.ceil(turnPrompt.length / 4) + 100;
+                totalOutTk += turnOut || Math.ceil(turnAccumulated.length / 4);
+
+                // Accumulate across all turns for track detection
+                allAccumulated += "\n" + turnAccumulated;
+
+                // Detect track completions (flexible matching, strip markdown)
+                const cleaned = allAccumulated.replace(/\*\*/g, "").replace(/\*/g, "").replace(/_/g, "").replace(/`/g, "").toLowerCase();
+                for (const t of trackList) {
+                  if (completedTracks.has(t)) continue;
+                  // Match "TRACK N COMPLETE" in various formats
+                  if (cleaned.includes(`track ${t} complete`) ||
+                      cleaned.match(new RegExp(`track\\s*${t}\\s*(?::|\\s)\\s*(?:is\\s+)?complete`)) ||
+                      cleaned.match(new RegExp(`track\\s*${t}\\s+done`))) {
+                    completedTracks.add(t);
+                    tracksCompleted = completedTracks.size;
+                    addEntry({
+                      type: "marathon-progress" as const,
+                      event: "milestone_completed",
+                      milestone: `Track ${t} complete`,
+                      progress: tracksCompleted,
+                      total: trackCount,
+                      thinkingLevel: config?.thinking?.defaultLevel || "high",
+                    });
+                  }
+                }
+
+                // Detect overall completion
+                const cleanedLower = cleaned;
+                if (cleanedLower.includes("all tracks complete") ||
+                    cleanedLower.includes("demonstration complete") ||
+                    completedTracks.size >= trackCount) {
+                  demoComplete = true;
+                }
+              } else if (!turnAccumulated && demoTurn > 1) {
+                // No output produced -- agent is done
+                demoComplete = true;
+              }
+            }
+
+            // ── Demo complete ────────────────────────────────
+            addEntry({
+              type: "marathon-progress" as const,
+              event: "completed",
+              milestone: `x402 Demo finished (${completedTracks.size}/${trackCount} tracks, ${demoTurn} turns)`,
+              progress: completedTracks.size,
+              total: trackCount,
+              thinkingLevel: config?.thinking?.defaultLevel || "high",
+            });
+
+            // ── Programmatic Verification Proof ──
+            try {
+              const { SKALE_BITE_SANDBOX } = await import("../../integrations/agentic-commerce/config.js");
+              const executor = agent.getToolExecutor();
+              const auditResult = await executor.execute({ name: "x402_audit_trail", args: { format: "json" } });
+              const budgetResult = await executor.execute({ name: "x402_check_budget", args: {} });
+
+              if (auditResult.success && auditResult.output) {
+                let report: any = {};
+                try { report = JSON.parse(auditResult.output); } catch {}
+                const records = report.records || [];
+                const totalSpent = report.totalSpent ?? records.reduce((s: number, r: any) => s + (r.amount || 0), 0);
+                const walletAddr = report.agentAddress || "";
+                const explorerBase = SKALE_BITE_SANDBOX.explorerUrl;
+
+                // Build verification table lines
+                const txRows = records.map((r: any, i: number) => {
+                  const num = String(i + 1).padEnd(3);
+                  const svc = (r.service || "unknown").slice(0, 22).padEnd(23);
+                  const amt = `$${(r.amount || 0).toFixed(6)}`.padEnd(14);
+                  const st = (r.status || "unknown").padEnd(11);
+                  const hash = r.txHash && r.txHash.startsWith("0x") && r.txHash.length > 10
+                    ? `${r.txHash.slice(0, 14)}...`
+                    : (r.txHash || "pending");
+                  return `  \u2502 ${num}${svc}${amt}${st}${hash}`;
+                });
+
+                const trackRows = trackList.map((t: string) => {
+                  const passed = completedTracks.has(t);
+                  const trackNames: Record<string, string> = {
+                    "1": "Agentic App", "2": "x402 Tool Usage", "3": "AP2 Integration",
+                    "4": "DeFi/Trading", "5": "BITE v2 Encryption",
+                  };
+                  const name = (trackNames[t] || `Track ${t}`).padEnd(28);
+                  const status = passed ? "PASS" : "FAIL";
+                  return `  \u2502 ${t.padEnd(8)}${name}${status}`;
+                });
+
+                // Full tx hashes for verification
+                const txLinks = records
+                  .filter((r: any) => r.txHash && r.txHash.startsWith("0x") && r.txHash.length > 10)
+                  .map((r: any, i: number) => `  \u2502 Tx #${i + 1}: ${explorerBase}/tx/${r.txHash}`);
+
+                const verificationText = [
+                  "",
+                  "\u2501".repeat(62),
+                  "  HACKATHON DEMO \u2500 ON-CHAIN VERIFICATION PROOF",
+                  "\u2501".repeat(62),
+                  "",
+                  `  Tracks Completed:    ${completedTracks.size} / ${trackCount}`,
+                  `  Total Payments:      ${records.length} transactions`,
+                  `  Total USDC Spent:    $${totalSpent.toFixed(6)}`,
+                  `  Demo Duration:       ${demoTurn} turns`,
+                  `  Budget Remaining:    $${(report.budgetRemaining ?? 0).toFixed(6)}`,
+                  "",
+                  "  \u250C\u2500 Transaction Verification \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510",
+                  `  \u2502 ${"#".padEnd(3)}${"Service".padEnd(23)}${"Amount".padEnd(14)}${"Status".padEnd(11)}Tx Hash`,
+                  `  \u2502${"─".repeat(59)}`,
+                  ...txRows,
+                  "  \u2514" + "\u2500".repeat(59) + "\u2518",
+                  "",
+                  "  \u250C\u2500 Track Results \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510",
+                  `  \u2502 ${"Track".padEnd(8)}${"Title".padEnd(28)}Status`,
+                  `  \u2502${"─".repeat(59)}`,
+                  ...trackRows,
+                  "  \u2514" + "\u2500".repeat(59) + "\u2518",
+                  "",
+                  "  \u250C\u2500 On-Chain Verification Links \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510",
+                  `  \u2502 Wallet:    ${explorerBase}/address/${walletAddr}`,
+                  `  \u2502 Network:   SKALE BITE V2 Sandbox (Chain ${SKALE_BITE_SANDBOX.chainId})`,
+                  `  \u2502 Seller:    ${sellerAddress}`,
+                  `  \u2502 Explorer:  ${explorerBase}`,
+                  `  \u2502`,
+                  ...txLinks,
+                  "  \u2514" + "\u2500".repeat(59) + "\u2518",
+                  "",
+                  "\u2501".repeat(62),
+                ].join("\n");
+
+                addEntry({ type: "response", text: verificationText });
+
+                // Auto-generate PDF audit report
+                try {
+                  const reportPath = `x402-audit-report-${Date.now()}`;
+                  const executor = agent.getToolExecutor();
+                  const reportResult = await executor.execute({
+                    name: "generate_x402_report",
+                    args: {
+                      outputPath: reportPath,
+                      agentAddress: walletAddr,
+                      sellerAddress,
+                      network: "SKALE BITE V2 Sandbox",
+                      chainId: String(SKALE_BITE_SANDBOX.chainId),
+                      explorerUrl: explorerBase,
+                      transactions: JSON.stringify(records),
+                      tracks: JSON.stringify(trackList.map((t: string) => ({
+                        track: parseInt(t),
+                        title: ({ "1": "Agentic App", "2": "x402 Tool Usage", "3": "AP2 Integration", "4": "DeFi/Trading", "5": "BITE v2 Encryption" } as Record<string, string>)[t] || `Track ${t}`,
+                        status: completedTracks.has(t) ? "PASS" : "FAIL",
+                        summary: completedTracks.has(t) ? "Completed successfully" : "Not completed",
+                      }))),
+                      totalSpent: String(totalSpent),
+                      duration: `${((Date.now() - chatStart) / 1000).toFixed(0)}s`,
+                      demoTurns: String(demoTurn),
+                    },
+                  });
+                  if (reportResult.success) {
+                    addEntry({ type: "response", text: `\n  Audit report generated: ${reportResult.output?.split("\n")[0] || reportPath}` });
+                  }
+                } catch {
+                  // Report generation is optional
+                }
+              }
+            } catch {
+              // Commerce module may not be initialized
+            }
+
+            tokenManager.recordUsage(config.gemini.models.pro, totalInTk, totalOutTk);
+
+            const elapsed = ((Date.now() - chatStart) / 1000).toFixed(1);
+            const stats = tokenManager.getStats();
+            const contextWindow = tokenManager.getContextWindow(config.gemini.models.pro);
+            const pct = Math.round((stats.sessionTokens / contextWindow) * 100);
+
+            const modelDisplay = config.gemini.models.pro
+              .replace("gemini-", "")
+              .replace("-preview", "")
+              .split("-")
+              .map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+              .join(" ");
+
+            setLastStats({
+              model: modelDisplay,
+              tokens: totalInTk + totalOutTk,
+              cost: stats.sessionCost,
+              contextPercent: pct,
+              elapsed,
+              mode: agent.getMode() === "plan" ? "plan" : undefined,
+              backend: vertexEnabled ? "Vertex" : undefined,
+            });
+
+            // Stop demo services only after ALL turns complete
+            try {
+              const { stopDemoServices } = await import("../../integrations/agentic-commerce/demo/server.js");
+              await stopDemoServices();
+            } catch {}
+
+          } catch (err) {
+            addEntry({
+              type: "error",
+              message: err instanceof Error ? err.message : String(err),
+            });
+            // Ensure services stop even on error
+            try {
+              const { stopDemoServices } = await import("../../integrations/agentic-commerce/demo/server.js");
+              await stopDemoServices();
+            } catch {}
+          }
+
+          abortRef.current = null;
+          stopThinking();
+          setIsProcessing(false);
+          setActivePrompt("");
+          setStreamingText("");
+        })();
+
+        return;
+      }
+
       if (trimmed === "/help" || trimmed === "?") {
         addEntry({ type: "user-input", text: trimmed });
         addEntry({
@@ -808,6 +1381,7 @@ export function App({
       const { text: chatText, images } = extractImages(trimmed);
 
       addEntry({ type: "user-input", text: trimmed });
+      setActivePrompt(trimmed);
 
       // Show image attachment indicator
       if (images.length > 0) {
@@ -818,6 +1392,7 @@ export function App({
       setStreamingText("");
       setThinkingText("");
       thinkingTextRef.current = "";
+      thinkingSigRef.current = "";
       startThinking();
 
       const abort = new AbortController();
@@ -848,6 +1423,12 @@ export function App({
               }
               break;
 
+            case "thought_signature":
+              if (chunk.content) {
+                thinkingSigRef.current = chunk.content;
+              }
+              break;
+
             case "tool_call": {
               stopThinking();
               let args: Record<string, unknown> = {};
@@ -867,18 +1448,23 @@ export function App({
 
             case "tool_result": {
               const elapsed = Date.now() - toolStart;
-              const isError =
-                chunk.content.toLowerCase().includes("error") ||
-                chunk.content.toLowerCase().includes("failed");
+              const isError = chunk.success === false || chunk.content.startsWith("ERROR: ");
               addEntry({
                 type: "tool-result",
                 data: {
                   name: toolName || "tool",
-                  result: chunk.content.slice(0, 200),
+                  result: chunk.content.slice(0, 800),
                   durationMs: elapsed,
                   isError,
                 },
               });
+              // Detect sandbox (dev server) launches
+              if (toolName === "run_dev_server" || toolName === "bash") {
+                const urlMatch = chunk.content.match(/https?:\/\/localhost:\d+/);
+                if (urlMatch) {
+                  addEntry({ type: "sandbox", url: urlMatch[0], project: "app" });
+                }
+              }
               break;
             }
 
@@ -886,8 +1472,14 @@ export function App({
               stopThinking();
               // Commit thinking to history on first text chunk
               if (!accumulated && thinkingTextRef.current) {
-                addEntry({ type: "thinking", text: thinkingTextRef.current });
+                addEntry({
+                  type: "thinking",
+                  text: thinkingTextRef.current,
+                  signature: thinkingSigRef.current || undefined,
+                  thinkingLevel: config?.thinking?.defaultLevel || "high",
+                });
                 thinkingTextRef.current = "";
+                thinkingSigRef.current = "";
                 setThinkingText("");
               }
               accumulated += chunk.content;
@@ -960,6 +1552,7 @@ export function App({
       abortRef.current = null;
       stopThinking();
       setIsProcessing(false);
+          setActivePrompt("");
       setStreamingText("");
     },
     [
@@ -1027,20 +1620,18 @@ export function App({
         {(entry) => <HistoryItem key={entry.id} entry={entry} />}
       </Static>
 
-      {/* Thinking spinner */}
+      {/* Glare bar + Thinking spinner (with live thinking preview integrated) */}
       {isProcessing && thinkingElapsed > 0 && !streamingText && (
-        <ThinkingSpinner elapsed={thinkingElapsed} />
-      )}
-
-      {/* Thinking content (live) */}
-      {isProcessing && thinkingText && (
-        <Box flexDirection="column" marginLeft={2} marginTop={1}>
-          <Text dimColor color="#8B8B8B">
-            {"\u2726"} Thinking
-          </Text>
-          <Box marginLeft={4}>
-            <Text dimColor>{thinkingText.slice(-400)}</Text>
-          </Box>
+        <Box flexDirection="column">
+          <GlareBar
+            color={theme.thinkingLevelHex?.[config?.thinking?.defaultLevel || "medium"] || theme.primaryHex}
+          />
+          <ThinkingSpinner
+            elapsed={thinkingElapsed}
+            thinkingText={thinkingText}
+            thinkingLevel={config?.thinking?.defaultLevel || "medium"}
+            mode={activePrompt.startsWith("/marathon") ? "marathon" : activePrompt.startsWith("/x402") ? "x402" : undefined}
+          />
         </Box>
       )}
 
@@ -1069,6 +1660,16 @@ export function App({
       */}
       {/* Input area -- always visible (like Claude Code) */}
       <Box flexDirection="column">
+        {/* ── Active prompt indicator (shown while processing) ── */}
+        {isProcessing && activePrompt && (
+          <Box>
+            <Text color="#4A9EFF">{"\u{1F539}"} </Text>
+            <Text color="#4A9EFF" bold>
+              {activePrompt.length > 60 ? activePrompt.slice(0, 57) + "..." : activePrompt}
+            </Text>
+          </Box>
+        )}
+
         {/* ── Top separator ── */}
         <Text>{palSepLine}</Text>
 

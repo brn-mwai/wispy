@@ -209,28 +209,30 @@ export class RiskEngine {
       .reduce((sum, d) => sum + parseFloat(d.amount), 0);
   }
 
-  /** Format trade history as human-readable log */
+  /** Format trade history as CLI-styled log */
   formatTradeLog(): string {
-    if (this.history.length === 0) return "No trades evaluated yet.";
+    if (this.history.length === 0) return "  (no trades evaluated yet)";
+
+    const approved = this.history.filter((d) => d.approved).length;
+    const denied = this.history.length - approved;
 
     const lines: string[] = [
-      `## DeFi Trade Log`,
-      ``,
-      `| # | Action | From | To | Amount | Risk | Approved | Reason |`,
-      `|---|--------|------|----|--------|------|----------|--------|`,
+      `  ┌─ Risk Evaluations ─────────────────`,
     ];
 
     for (let i = 0; i < this.history.length; i++) {
       const d = this.history[i];
+      const isLast = i === this.history.length - 1;
+      const c = isLast ? "╰" : "├";
+      const verdict = d.approved ? "APPROVED" : "DENIED";
       lines.push(
-        `| ${i + 1} | ${d.action} | ${d.fromToken} | ${d.toToken} | $${d.amount} | ${d.riskScore}/100 | ${d.approved ? "YES" : "NO"} | ${d.denialReason ?? d.reason.slice(0, 40)} |`,
+        `  ${c}─ #${i + 1} ${d.action} ${d.fromToken}->${d.toToken} $${d.amount}  risk:${d.riskScore}/100  [${verdict}]`,
       );
+      if (d.denialReason) {
+        lines.push(`  ${isLast ? " " : "│"}    ${d.denialReason}`);
+      }
     }
-
-    const approved = this.history.filter((d) => d.approved).length;
-    const denied = this.history.length - approved;
-    lines.push(``);
-    lines.push(`**Total:** ${this.history.length} evaluations | ${approved} approved | ${denied} denied`);
+    lines.push(`  └─ ${this.history.length} total | ${approved} approved | ${denied} denied`);
 
     return lines.join("\n");
   }

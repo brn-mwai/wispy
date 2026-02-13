@@ -63,6 +63,7 @@
     "url": "https://github.com/brn-mwai/wispy/issues"
   },
   "dependencies": {
+    "@coinbase/coinbase-sdk": "^0.25.0",
     "@coinbase/x402": "^2.1.0",
     "@google-cloud/speech": "^6.7.0",
     "@google-cloud/text-to-speech": "^5.5.0",

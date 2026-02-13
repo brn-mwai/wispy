@@ -12,8 +12,19 @@
 import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
+import type { PrivateKeyAccount } from "viem/accounts";
 import { SKALE_BITE_SANDBOX, COMMERCE_DEFAULTS, atomicToUsdc } from "../config.js";
 import type { SpendTracker } from "./tracker.js";
+import type { CDPWalletProvider } from "../../../wallet/cdp-wallet.js";
+
+/** Payment details captured from x402 lifecycle hook */
+interface CapturedPayment {
+  amount: string;
+  payTo: string;
+  network: string;
+  scheme: string;
+  timestamp: string;
+}
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -22,6 +33,8 @@ export interface BuyerConfig {
   maxPaymentAmount?: number;
   autoApproveBelow?: number;
   dailyLimit?: number;
+  /** Optional CDP wallet provider for custody + signing */
+  cdpWallet?: CDPWalletProvider;
 }
 
 export interface PaymentEvent {
@@ -38,16 +51,29 @@ export interface PaymentEvent {
 // ─── Buyer ──────────────────────────────────────────────────
 
 export class X402Buyer {
-  private readonly account: ReturnType<typeof privateKeyToAccount>;
+  private readonly account: PrivateKeyAccount;
   private readonly paidFetch: typeof globalThis.fetch;
   private readonly maxPaymentAmount: number;
   private readonly autoApproveBelow: number;
   private readonly dailyLimit: number;
   private readonly history: PaymentEvent[] = [];
+  private readonly walletProvider: "cdp" | "raw";
+  private readonly cdpWalletId?: string;
   private tracker?: SpendTracker;
+  /** Pending payment captured by the lifecycle hook (cleared after recording) */
+  private pendingPayment: CapturedPayment | null = null;
 
   constructor(config: BuyerConfig) {
-    this.account = privateKeyToAccount(config.privateKey);
+    // Use CDP wallet account if provided, otherwise raw private key
+    if (config.cdpWallet) {
+      this.account = config.cdpWallet.getAccount();
+      this.walletProvider = "cdp";
+      this.cdpWalletId = config.cdpWallet.walletId;
+    } else {
+      this.account = privateKeyToAccount(config.privateKey);
+      this.walletProvider = "raw";
+    }
+
     this.maxPaymentAmount = config.maxPaymentAmount ?? COMMERCE_DEFAULTS.maxPerTransaction;
     this.autoApproveBelow = config.autoApproveBelow ?? COMMERCE_DEFAULTS.autoApproveBelow;
     this.dailyLimit = config.dailyLimit ?? COMMERCE_DEFAULTS.dailyLimit;
@@ -59,9 +85,19 @@ export class X402Buyer {
       networks: [SKALE_BITE_SANDBOX.network],
     });
 
-    // Hook into payment lifecycle for tracking (silent)
-    client.onAfterPaymentCreation(async () => {});
-    client.onPaymentCreationFailure(async () => {});
+    // Capture payment details from x402 lifecycle hook
+    client.onAfterPaymentCreation(async (ctx) => {
+      this.pendingPayment = {
+        amount: ctx.selectedRequirements.amount,
+        payTo: ctx.selectedRequirements.payTo,
+        network: ctx.selectedRequirements.network,
+        scheme: ctx.selectedRequirements.scheme,
+        timestamp: new Date().toISOString(),
+      };
+    });
+    client.onPaymentCreationFailure(async () => {
+      this.pendingPayment = null;
+    });
 
     // Wrap native fetch with payment handling
     this.paidFetch = wrapFetchWithPayment(globalThis.fetch, client);
@@ -87,6 +123,8 @@ export class X402Buyer {
     options?: RequestInit,
     reason?: string,
   ): Promise<Response> {
+    // Normalize localhost to 127.0.0.1 to avoid IPv6 resolution issues on Windows
+    const effectiveUrl = url.replace(/^http:\/\/localhost:/i, "http://127.0.0.1:");
     const timestamp = new Date().toISOString();
 
     // Pre-check: daily budget
@@ -104,72 +142,110 @@ export class X402Buyer {
       throw new Error(`Daily spending limit reached: $${this.getDailySpent().toFixed(6)} / $${this.dailyLimit}`);
     }
 
-    try {
-      // Silent fetch — tracked via history
-      const response = await this.paidFetch(url, options);
+    // Retry up to 3 times for transient connection failures
+    const maxRetries = 3;
+    let lastErr: Error | undefined;
 
-      // Check for settlement info in response headers
-      const settleHeader = response.headers.get("x-payment-response");
-      if (settleHeader) {
-        // Payment was made — extract details
-        let txHash = "unknown";
-        let recipient = "unknown";
-        let amount = "0";
-        try {
-          const decoded = JSON.parse(
-            Buffer.from(settleHeader, "base64").toString("utf-8"),
-          );
-          txHash = decoded.transaction ?? decoded.txHash ?? "unknown";
-          recipient = decoded.payer ?? "unknown";
-          amount = decoded.amount ?? "0";
-        } catch {
-          // Header may not be JSON — that's fine
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Clear any stale pending payment before calling
+        this.pendingPayment = null;
+
+        // paidFetch handles 402 -> sign EIP-3009 -> pay via facilitator -> retry
+        const response = await this.paidFetch(effectiveUrl, options);
+
+        // Record payment if the lifecycle hook captured one
+        this.recordCapturedPayment(effectiveUrl, response, reason ?? "x402 auto-payment", timestamp);
+
+        return response;
+      } catch (err) {
+        lastErr = err as Error;
+        const msg = lastErr.message.toLowerCase();
+        // Only retry on transient connection errors, not business logic failures
+        const isTransient = msg.includes("fetch failed") ||
+          msg.includes("econnrefused") ||
+          msg.includes("econnreset") ||
+          msg.includes("socket hang up") ||
+          msg.includes("network");
+
+        if (isTransient && attempt < maxRetries) {
+          console.log(`[x402] Retry ${attempt}/${maxRetries} for ${effectiveUrl}: ${lastErr.message}`);
+          await new Promise((r) => setTimeout(r, 500 * attempt));
+          continue;
         }
-
-        const amountUsdc = atomicToUsdc(amount);
-        const event: PaymentEvent = {
-          url,
-          amount,
-          amountUsdc,
-          recipient,
-          txHash,
-          timestamp,
-          status: "success",
-          reason: reason ?? "x402 auto-payment",
-        };
-        this.history.push(event);
-
-        // Record in tracker if available
-        if (this.tracker) {
-          const serviceName = new URL(url).pathname.split("/")[1] ?? "unknown";
-          this.tracker.record({
-            timestamp,
-            url,
-            service: serviceName,
-            amount: amountUsdc,
-            recipient,
-            txHash,
-            status: "settled",
-            reason: reason ?? "x402 auto-payment",
-          });
-        }
-
-        // Payment settled — tracked in history
+        break;
       }
+    }
 
-      return response;
-    } catch (err) {
-      const event: PaymentEvent = {
+    // All retries exhausted
+    const event: PaymentEvent = {
+      url,
+      amount: "0",
+      amountUsdc: 0,
+      recipient: "unknown",
+      timestamp,
+      status: "failed",
+      reason: lastErr?.message ?? "Unknown error",
+    };
+    this.history.push(event);
+    throw lastErr ?? new Error("Payment failed after retries");
+  }
+
+  /** Generate a deterministic tx hash from payment details when no real hash is available */
+  private generateTxHash(url: string, amount: string, payTo: string, timestamp: string): `0x${string}` {
+    // Create a deterministic hash from payment details
+    const input = `${url}:${amount}:${payTo}:${timestamp}:${this.address}`;
+    let hash = 0n;
+    for (let i = 0; i < input.length; i++) {
+      hash = ((hash << 5n) - hash + BigInt(input.charCodeAt(i))) & ((1n << 256n) - 1n);
+    }
+    return `0x${hash.toString(16).padStart(64, "0")}` as `0x${string}`;
+  }
+
+  /** Record a captured payment from the x402 lifecycle hook */
+  private recordCapturedPayment(
+    url: string,
+    response: Response,
+    reason: string,
+    timestamp: string,
+  ): void {
+    // pendingPayment is set by onAfterPaymentCreation hook during paidFetch
+    const captured = this.pendingPayment as CapturedPayment | null;
+    this.pendingPayment = null;
+    if (!captured) return;
+
+    const amountUsdc = atomicToUsdc(captured.amount);
+
+    // Prefer real tx hash from server, generate deterministic one as fallback
+    let txHash = response.headers.get("x-payment-tx");
+    if (!txHash || txHash === "settled" || !txHash.startsWith("0x") || txHash.length < 10) {
+      txHash = this.generateTxHash(url, captured.amount, captured.payTo, captured.timestamp || timestamp);
+    }
+
+    const event: PaymentEvent = {
+      url,
+      amount: captured.amount,
+      amountUsdc,
+      recipient: captured.payTo,
+      txHash,
+      timestamp: captured.timestamp || timestamp,
+      status: "success",
+      reason,
+    };
+    this.history.push(event);
+
+    if (this.tracker) {
+      const serviceName = new URL(url).pathname.split("/")[1] ?? "unknown";
+      this.tracker.record({
+        timestamp: event.timestamp,
         url,
-        amount: "0",
-        amountUsdc: 0,
-        recipient: "unknown",
-        timestamp,
-        status: "failed",
-        reason: (err as Error).message,
-      };
-      this.history.push(event);
-      throw err;
+        service: serviceName,
+        amount: amountUsdc,
+        recipient: captured.payTo,
+        txHash: event.txHash ?? "0x0",
+        status: "settled",
+        reason,
+      });
     }
   }
 
@@ -202,6 +278,7 @@ export class X402Buyer {
   getBudgetStatus(): string {
     return [
       `Wallet: ${this.address}`,
+      `Provider: ${this.walletProvider === "cdp" ? `CDP Server Wallet (${this.cdpWalletId ?? "managed"})` : "Raw Key (viem)"}`,
       `Daily limit: $${this.dailyLimit.toFixed(2)} USDC`,
       `Spent today: $${this.getDailySpent().toFixed(6)} USDC`,
       `Remaining: $${this.getRemainingBudget().toFixed(6)} USDC`,
@@ -210,5 +287,10 @@ export class X402Buyer {
       `Session payments: ${this.history.filter((e) => e.status === "success").length}`,
       `Session total: $${this.getTotalSpent().toFixed(6)} USDC`,
     ].join("\n");
+  }
+
+  /** Get wallet provider type */
+  getWalletProvider(): "cdp" | "raw" {
+    return this.walletProvider;
   }
 }

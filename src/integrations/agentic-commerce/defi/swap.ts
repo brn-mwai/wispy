@@ -595,31 +595,43 @@ export class DeFiAgent {
 
   /** Get formatted trade log with all decisions */
   getTradeLog(): string {
+    const executed = this.tradeResults.filter((r) => r.success).length;
+    const denied = this.tradeResults.filter((r) => !r.success).length;
+
     const lines: string[] = [
-      `## DeFi Agent Trade Log`,
+      `━━━ DeFi Agent Trade Log ━━━`,
       ``,
-      `**Agent:** \`${this.account.address}\``,
-      `**Trades executed:** ${this.tradeResults.filter((r) => r.success).length}`,
-      `**Trades denied:** ${this.tradeResults.filter((r) => !r.success).length}`,
-      `**Network:** SKALE BITE V2 Sandbox (Chain ${SKALE_BITE_SANDBOX.chainId})`,
-      `**DEX:** Algebra Integral v1.2.2 (SwapRouter: \`${ALGEBRA_CONTRACTS.swapRouter.slice(0, 10)}...\`)`,
+      `  Agent:    ${this.account.address}`,
+      `  Executed: ${executed}  Denied: ${denied}`,
+      `  Network:  SKALE BITE V2 Sandbox (Chain ${SKALE_BITE_SANDBOX.chainId})`,
+      `  DEX:      Algebra Integral v1.2.2 (${ALGEBRA_CONTRACTS.swapRouter.slice(0, 12)}...)`,
       ``,
       this.riskEngine.formatTradeLog(),
       ``,
-      `### Execution Results`,
-      `| # | From | To | Amount In | Amount Out | Method | Tx Hash | Status |`,
-      `|---|------|----|-----------|------------|--------|---------|--------|`,
+      `  ┌─ Execution Results ──────────────────`,
     ];
 
+    if (this.tradeResults.length === 0) {
+      lines.push(`  │ (no trades executed)`);
+    }
     for (let i = 0; i < this.tradeResults.length; i++) {
       const r = this.tradeResults[i];
-      const hash = r.txHash
-        ? `[\`${r.txHash.slice(0, 12)}...\`](${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.txHash})`
-        : "N/A";
+      const isLast = i === this.tradeResults.length - 1;
+      const c = isLast ? "╰" : "├";
+      const status = r.success ? "OK" : "FAILED";
       lines.push(
-        `| ${i + 1} | ${r.fromToken} | ${r.toToken} | $${r.amountIn} | ${r.amountOut ?? "N/A"} | ${r.method} | ${hash} | ${r.success ? "OK" : "FAILED"} |`,
+        `  ${c}─ #${i + 1} ${r.fromToken} -> ${r.toToken}  $${r.amountIn} in / ${r.amountOut ?? "N/A"} out  [${status}]`,
       );
+      if (r.txHash) {
+        lines.push(
+          `  ${isLast ? " " : "│"}    tx: ${r.txHash.slice(0, 16)}...  method: ${r.method}`,
+          `  ${isLast ? " " : "│"}    ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.txHash}`,
+        );
+      } else if (r.error) {
+        lines.push(`  ${isLast ? " " : "│"}    ${r.error.slice(0, 60)}`);
+      }
     }
+    lines.push(`  └────────────────────────────────────`);
 
     return lines.join("\n");
   }

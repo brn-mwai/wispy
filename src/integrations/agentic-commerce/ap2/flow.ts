@@ -237,19 +237,19 @@ export class AP2Flow {
       return JSON.stringify(this.records, null, 2);
     }
 
+    const success = this.records.filter((r) => r.receipt.status === "success").length;
+    const failed = this.records.length - success;
+
     const lines: string[] = [
-      `# AP2 Audit Trail`,
+      `━━━ AP2 Audit Trail ━━━`,
       ``,
-      `**Agent:** \`${this.buyer.address}\``,
-      `**Total transactions:** ${this.records.length}`,
-      `**Successful:** ${this.records.filter((r) => r.receipt.status === "success").length}`,
-      `**Failed:** ${this.records.filter((r) => r.receipt.status !== "success").length}`,
+      `  Agent:        ${this.buyer.address}`,
+      `  Transactions: ${this.records.length} (${success} success, ${failed} failed)`,
       ``,
     ];
 
     for (let i = 0; i < this.records.length; i++) {
-      lines.push(`---`);
-      lines.push(`### Transaction ${i + 1}`);
+      lines.push(`  ── Transaction ${i + 1} ──`);
       lines.push(formatReceiptMarkdown(this.records[i]));
       lines.push(``);
     }

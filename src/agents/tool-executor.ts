@@ -281,6 +281,8 @@ export class ToolExecutor {
           return this.executeLatexCompile(tool.args);
         case "research_report":
           return this.executeResearchReport(tool.args);
+        case "generate_x402_report":
+          return this.executeGenerateX402Report(tool.args);
         // === Telegram Document Delivery ===
         case "send_document_to_telegram":
           return this.executeSendDocumentToTelegram(tool.args);
@@ -422,13 +424,89 @@ export class ToolExecutor {
         env: { ...process.env },
       });
 
-      const output = sanitizeOutput(stdout + (stderr ? `\nSTDERR: ${stderr}` : ""));
+      const combined = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
+      const output = sanitizeOutput(combined);
+
+      // Self-healing: detect errors in successful exit code outputs (e.g. npm warnings, TS errors)
+      const healingHint = this.detectErrorsForSelfHealing(combined);
+      if (healingHint) {
+        return { success: true, output: output + `\n\n[SELF-HEAL] ${healingHint}` };
+      }
+
       return { success: true, output };
     } catch (err: any) {
       const output = sanitizeOutput(err.stdout || "");
-      const error = sanitizeOutput(err.stderr || err.message || "Command failed");
+      const errorMsg = sanitizeOutput(err.stderr || err.message || "Command failed");
+
+      // Self-healing: enrich error with fix hint
+      const healingHint = this.detectErrorsForSelfHealing(err.stderr || err.stdout || err.message || "");
+      const error = healingHint
+        ? `${errorMsg}\n\n[SELF-HEAL] ${healingHint}`
+        : errorMsg;
+
       return { success: false, output, error };
     }
+  }
+
+  /**
+   * Self-healing: Detect common errors and provide fix hints for the agent.
+   * Returns a hint string or null if no actionable error is detected.
+   */
+  private detectErrorsForSelfHealing(output: string): string | null {
+    if (!output) return null;
+    const lower = output.toLowerCase();
+
+    // Module not found
+    if (lower.includes("module not found") || lower.includes("cannot find module")) {
+      const match = output.match(/Cannot find module ['"]([^'"]+)['"]/i);
+      const mod = match?.[1] || "the missing module";
+      return `Missing module detected: ${mod}. Fix: run "npm install ${mod}" then retry.`;
+    }
+
+    // TypeScript errors
+    if (lower.includes("ts(") || lower.includes("error ts")) {
+      return "TypeScript compilation errors detected. Read the error messages, fix the type issues in the source files, then rebuild.";
+    }
+
+    // ESLint / Syntax errors
+    if (lower.includes("syntaxerror") || lower.includes("unexpected token")) {
+      return "Syntax error detected. Check the file for missing brackets, semicolons, or invalid syntax. Fix and retry.";
+    }
+
+    // Port in use
+    if (lower.includes("eaddrinuse") || lower.includes("address already in use")) {
+      const portMatch = output.match(/port (\d+)/i) || output.match(/:(\d{4,5})/);
+      const port = portMatch?.[1] || "the port";
+      return `Port ${port} is already in use. Fix: kill the process using the port or use a different port.`;
+    }
+
+    // Permission denied
+    if (lower.includes("eacces") || lower.includes("permission denied")) {
+      return "Permission denied. Try using a relative path in the workspace directory instead.";
+    }
+
+    // npm ERR
+    if (lower.includes("npm err!") || lower.includes("npm error")) {
+      if (lower.includes("peer dep") || lower.includes("peer dependency")) {
+        return "Peer dependency conflict. Fix: run with --legacy-peer-deps flag.";
+      }
+      if (lower.includes("enoent") || lower.includes("no such file")) {
+        return "File or directory not found. Verify the path exists before running the command.";
+      }
+      return "npm error detected. Read the error output, fix the issue, and retry.";
+    }
+
+    // React/Next.js build errors
+    if (lower.includes("failed to compile") || lower.includes("build error")) {
+      return "Build failed. Read the specific error lines, fix the code, and rebuild.";
+    }
+
+    // General error pattern (only for meaningful errors, not warnings)
+    if ((lower.includes("error:") || lower.includes("error -")) && !lower.includes("0 error")) {
+      return "Errors detected in output. Read the error messages, fix the root cause, and retry the command.";
+    }
+
+    return null;
   }
 
   private executeFileRead(args: Record<string, unknown>): ToolResult {
@@ -3108,8 +3186,18 @@ export default ${componentName};
             });
             log.info("npm install completed successfully");
           } catch (installErr: any) {
-            log.warn("npm install warning: " + installErr.message);
-            // Continue anyway - try to run dev server
+            const installError = (installErr.stderr || installErr.message || "").toString();
+            log.warn("npm install warning: " + installError.slice(0, 200));
+            // Self-healing: provide fix hints
+            const hint = this.detectErrorsForSelfHealing(installError);
+            if (hint && installError.toLowerCase().includes("err!")) {
+              return {
+                success: false,
+                output: `npm install failed in ${fullPath}`,
+                error: `${installError.slice(0, 2000)}\n\n[SELF-HEAL] ${hint}`,
+              };
+            }
+            // Non-fatal warnings: continue anyway
           }
         }
 
@@ -3376,6 +3464,67 @@ export default ${componentName};
     }
   }
 
+  // === x402 Audit Report ===
+
+  private async executeGenerateX402Report(args: Record<string, unknown>): Promise<ToolResult> {
+    const outputPath = String(args.outputPath || "");
+    const agentAddress = String(args.agentAddress || "");
+    const network = String(args.network || "");
+    const chainId = Number(args.chainId || 0);
+    const explorerUrl = String(args.explorerUrl || "");
+    const transactionsStr = String(args.transactions || "[]");
+    const tracksStr = String(args.tracks || "[]");
+    const totalSpent = Number(args.totalSpent || 0);
+
+    if (!outputPath || !agentAddress || !explorerUrl) {
+      return { success: false, output: "", error: "outputPath, agentAddress, and explorerUrl are required" };
+    }
+
+    try {
+      const transactions = JSON.parse(transactionsStr);
+      const tracks = JSON.parse(tracksStr);
+
+      const { join, isAbsolute } = await import("path");
+      const fullPath = isAbsolute(outputPath)
+        ? outputPath
+        : join(this.runtimeDir, "workspace", outputPath);
+
+      const { generateX402Report } = await import("../documents/x402-report.js");
+
+      const result = await generateX402Report({
+        title: args.title ? String(args.title) : undefined,
+        subtitle: args.subtitle ? String(args.subtitle) : undefined,
+        agentAddress,
+        sellerAddress: args.sellerAddress ? String(args.sellerAddress) : undefined,
+        network,
+        chainId,
+        explorerUrl,
+        totalSpent,
+        totalTransactions: transactions.length,
+        transactions,
+        tracks,
+        demoTurns: args.demoTurns ? Number(args.demoTurns) : undefined,
+        duration: args.duration ? String(args.duration) : undefined,
+        author: args.author ? String(args.author) : undefined,
+      }, fullPath);
+
+      const outputs = [`x402 Audit Report generated successfully.`];
+      outputs.push(`LaTeX source: ${result.texPath}`);
+      if (result.pdfPath) {
+        outputs.push(`PDF output: ${result.pdfPath}`);
+      } else {
+        outputs.push(`PDF compilation skipped or failed. LaTeX source is available for manual compilation.`);
+      }
+      outputs.push(`\nReport contains ${transactions.length} transactions across ${tracks.length} tracks.`);
+      outputs.push(`Total spent: $${totalSpent.toFixed(6)} USDC`);
+      outputs.push(`Network: ${network} (Chain ${chainId})`);
+
+      return { success: true, output: outputs.join("\n") };
+    } catch (err: any) {
+      return { success: false, output: "", error: `x402 report generation failed: ${err.message}` };
+    }
+  }
+
   // === Telegram Document Delivery Methods ===
 
   private async executeSendDocumentToTelegram(args: Record<string, unknown>): Promise<ToolResult> {
@@ -3393,12 +3542,26 @@ export default ${componentName};
     }
 
     try {
-      const chatId = this.currentChatContext?.chatId;
+      // Try current context first, then env var fallback for CLI usage
+      const chatId = this.currentChatContext?.chatId
+        || process.env.TELEGRAM_CHAT_ID
+        || process.env.WISPY_TELEGRAM_CHAT_ID;
       if (!chatId) {
-        return { success: false, output: "", error: "No active Telegram chat. Use this tool only in Telegram context." };
+        return { success: false, output: "", error: "No Telegram chat ID available. Set TELEGRAM_CHAT_ID environment variable to send documents from CLI, or use this tool in Telegram context." };
       }
 
-      const { sendPdf, sendDocumentWithVoice } = await import("../documents/telegram-delivery.js");
+      const { sendPdf, sendDocumentWithVoice, getTelegramBot, initTelegramDelivery } = await import("../documents/telegram-delivery.js");
+
+      // If bot not initialized but we have a token, initialize it for CLI delivery
+      if (!getTelegramBot() && process.env.TELEGRAM_BOT_TOKEN) {
+        try {
+          const { Bot } = await import("grammy");
+          const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
+          initTelegramDelivery(bot);
+        } catch {
+          // grammy may not be available
+        }
+      }
 
       if (withVoice && voiceText) {
         const success = await sendDocumentWithVoice(chatId, filePath, voiceText, { caption });

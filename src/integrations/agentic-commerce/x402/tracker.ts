@@ -125,62 +125,65 @@ export class SpendTracker {
     };
   }
 
-  /** Format audit report as human-readable markdown */
+  /** Format audit report as CLI-styled text (no markdown tables) */
   formatReport(): string {
     const report = this.getReport();
     const lines: string[] = [
-      `## x402 Spend Audit Report`,
+      `━━━ x402 Spend Audit Report ━━━`,
       ``,
-      `**Agent:** \`${report.agentAddress}\``,
-      `**Network:** ${report.network}`,
-      `**Period:** ${report.period.from} to ${report.period.to}`,
+      `  Agent:     ${report.agentAddress}`,
+      `  Network:   ${report.network}`,
+      `  Period:    ${report.period.from.slice(0, 19)} to ${report.period.to.slice(0, 19)}`,
       ``,
-      `### Summary`,
-      `| Metric | Value |`,
-      `|--------|-------|`,
-      `| Total Spent | $${report.totalSpent.toFixed(6)} USDC |`,
-      `| Transactions | ${report.totalTransactions} |`,
-      `| Budget Remaining | $${report.budgetRemaining.toFixed(6)} USDC |`,
-      `| Daily Limit | $${report.dailyLimit.toFixed(2)} USDC |`,
-      ``,
+      `  ┌─ Summary ─────────────────────────`,
+      `  │ Total Spent:      $${report.totalSpent.toFixed(6)} USDC`,
+      `  │ Transactions:     ${report.totalTransactions}`,
+      `  │ Budget Remaining: $${report.budgetRemaining.toFixed(6)} USDC`,
+      `  │ Daily Limit:      $${report.dailyLimit.toFixed(2)} USDC`,
+      `  └────────────────────────────────────`,
     ];
 
     if (report.byRecipient.length > 0) {
-      lines.push(`### By Recipient`);
-      lines.push(`| Address | Total | Count |`);
-      lines.push(`|---------|-------|-------|`);
+      lines.push(``, `  ┌─ By Recipient ──────────────────────`);
       for (const r of report.byRecipient) {
         lines.push(
-          `| \`${r.address.slice(0, 8)}...${r.address.slice(-6)}\` | $${r.total.toFixed(6)} | ${r.count} |`,
+          `  │ ${r.address.slice(0, 8)}...${r.address.slice(-6)}  $${r.total.toFixed(6)}  (${r.count} tx)`,
         );
       }
-      lines.push(``);
+      lines.push(`  └────────────────────────────────────`);
     }
 
     if (report.byService.length > 0) {
-      lines.push(`### By Service`);
-      lines.push(`| Service | Total | Count |`);
-      lines.push(`|---------|-------|-------|`);
+      lines.push(``, `  ┌─ By Service ────────────────────────`);
       for (const s of report.byService) {
-        lines.push(`| ${s.name} | $${s.total.toFixed(6)} | ${s.count} |`);
+        lines.push(
+          `  │ ${s.name.padEnd(16)} $${s.total.toFixed(6)}  (${s.count} tx)`,
+        );
       }
-      lines.push(``);
+      lines.push(`  └────────────────────────────────────`);
     }
 
-    lines.push(`### Transaction Log`);
-    lines.push(
-      `| # | Time | Service | Amount | Recipient | Tx Hash | Status |`,
-    );
-    lines.push(`|---|------|---------|--------|-----------|---------|--------|`);
+    lines.push(``, `  ┌─ Transaction Log ─────────────────────`);
+    if (report.records.length === 0) {
+      lines.push(`  │ (no transactions recorded)`);
+    }
     for (let i = 0; i < report.records.length; i++) {
       const r = report.records[i];
-      const hash = r.txHash
-        ? `[\`${r.txHash.slice(0, 10)}...\`](${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.txHash})`
-        : "pending";
+      const isLast = i === report.records.length - 1;
+      const connector = isLast ? "╰" : "├";
+      const hash = r.txHash && r.txHash !== "settled"
+        ? `${r.txHash.slice(0, 12)}...`
+        : r.txHash ?? "pending";
+      const explorer = r.txHash && r.txHash.startsWith("0x") && r.txHash.length > 10
+        ? `\n  │   ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.txHash}`
+        : "";
       lines.push(
-        `| ${i + 1} | ${r.timestamp.slice(11, 19)} | ${r.service} | $${r.amount.toFixed(6)} | \`${r.recipient.slice(0, 8)}...\` | ${hash} | ${r.status} |`,
+        `  ${connector}─ #${i + 1} [${r.timestamp.slice(11, 19)}] ${r.service}`,
+        `  │   $${r.amount.toFixed(6)} USDC -> ${r.recipient.slice(0, 10)}...`,
+        `  │   tx: ${hash}  status: ${r.status}${explorer}`,
       );
     }
+    lines.push(`  └────────────────────────────────────`);
 
     return lines.join("\n");
   }
