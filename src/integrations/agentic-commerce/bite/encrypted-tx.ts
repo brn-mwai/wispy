@@ -139,6 +139,34 @@ export class EncryptedCommerce {
   }
 
   /**
+   * Query the BLS threshold encryption committee info from SKALE validators.
+   * Shows which validator nodes participate in cooperative decryption.
+   */
+  async getCommitteesInfo(): Promise<
+    Array<{ commonBLSPublicKey: string; epochId: number }>
+  > {
+    if (this.bite.getCommitteesInfo) {
+      try {
+        const committees = await this.bite.getCommitteesInfo();
+        console.log(`[BITE] BLS committee info: ${committees.length} committee(s)`);
+        for (const c of committees) {
+          console.log(
+            `[BITE]   Epoch ${c.epochId}: BLS pubkey ${c.commonBLSPublicKey.slice(0, 32)}...`,
+          );
+        }
+        return committees;
+      } catch (err) {
+        console.warn(
+          `[BITE] getCommitteesInfo failed: ${(err as Error).message}`,
+        );
+        return [];
+      }
+    }
+    console.log("[BITE] getCommitteesInfo not available on this BITE instance");
+    return [];
+  }
+
+  /**
    * Encrypt a payment transaction using BITE threshold encryption.
    * The `to` and `data` fields are BLS-encrypted — nobody can read them
    * until 2t+1 validators cooperatively decrypt during consensus.

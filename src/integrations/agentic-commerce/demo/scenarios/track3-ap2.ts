@@ -28,9 +28,10 @@ export async function runTrack3(): Promise<string> {
   const buyer = new X402Buyer({ privateKey: agentKey });
   const tracker = new SpendTracker(buyer.address);
   buyer.setTracker(tracker);
-  const ap2 = new AP2Flow(buyer, tracker);
+  const ap2 = new AP2Flow(buyer, tracker, agentKey);
 
-  log(`Agent wallet: ${buyer.address}\n`);
+  log(`Agent wallet: ${buyer.address}`);
+  log(`Mandate signing: ENABLED (EIP-191 personal message signatures)\n`);
 
   try {
     // Purchase 1: Weather data (success)
@@ -44,6 +45,8 @@ export async function runTrack3(): Promise<string> {
     });
     log(`  Status: ${record1.receipt.status}`);
     log(`  Mandates: Intent(${record1.intent.id.slice(0, 20)}...) → Cart(${record1.cart.id.slice(0, 18)}...) → Payment(${record1.payment.id.slice(0, 22)}...)`);
+    log(`  Intent signed: ${record1.intent.signature ? record1.intent.signature.slice(0, 24) + "..." : "unsigned"}`);
+    log(`  Payment signed: ${record1.payment.signature ? record1.payment.signature.slice(0, 24) + "..." : "unsigned"}`);
     log(`  Receipt: ${record1.receipt.id.slice(0, 22)}... | tx: ${record1.receipt.txHash.slice(0, 16)}...`);
     log(``);
 
@@ -57,7 +60,8 @@ export async function runTrack3(): Promise<string> {
       expectedPrice: "0.002",
     });
     log(`  Status: ${record2.receipt.status}`);
-    log(`  Mandates: Intent → Cart → Payment`);
+    log(`  Mandates: Intent → Cart → Payment (all signed)`);
+    log(`  Intent sig: ${record2.intent.signature?.slice(0, 24) ?? "N/A"}...`);
     log(`  Receipt: ${record2.receipt.id.slice(0, 22)}... | tx: ${record2.receipt.txHash.slice(0, 16)}...`);
     log(``);
 

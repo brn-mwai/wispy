@@ -7,8 +7,9 @@
  * PaymentMandate -> Authorization to pay
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { SKALE_BITE_SANDBOX } from "../config.js";
+import { privateKeyToAccount } from "viem/accounts";
 
 // ─── Mandate Types ──────────────────────────────────────────
 
@@ -42,6 +43,7 @@ export interface CartMandate {
   total: string;
   expiry: string;
   signedBy: string;
+  signature?: string;
   createdAt: string;
 }
 
@@ -57,7 +59,81 @@ export interface PaymentMandate {
   network: string;
   authorizedBy: string;
   authorizedAt: string;
+  signature?: string;
   createdAt: string;
+}
+
+// ─── Mandate Signing ────────────────────────────────────────
+
+/** Hash a mandate's core fields into a deterministic digest for signing. */
+function mandateDigest(fields: Record<string, unknown>): string {
+  const canonical = JSON.stringify(fields, Object.keys(fields).sort());
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+/**
+ * Sign an IntentMandate with the agent wallet (viem account).
+ * Populates the `signature` field with an EIP-191 personal message signature.
+ */
+export async function signIntentMandate(
+  mandate: IntentMandate,
+  privateKey: string,
+): Promise<IntentMandate> {
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const digest = mandateDigest({
+    id: mandate.id,
+    agentId: mandate.agentId,
+    description: mandate.description,
+    maxBudget: mandate.maxBudget,
+    currency: mandate.currency,
+    expiry: mandate.expiry,
+  });
+
+  const signature = await account.signMessage({ message: digest });
+  return { ...mandate, signature, signedBy: account.address };
+}
+
+/**
+ * Sign a CartMandate with the merchant wallet.
+ */
+export async function signCartMandate(
+  mandate: CartMandate,
+  privateKey: string,
+): Promise<CartMandate> {
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const digest = mandateDigest({
+    id: mandate.id,
+    intentId: mandate.intentId,
+    total: mandate.total,
+    merchantAddress: mandate.merchantAddress,
+    expiry: mandate.expiry,
+  });
+
+  const signature = await account.signMessage({ message: digest });
+  return { ...mandate, signature, signedBy: account.address };
+}
+
+/**
+ * Sign a PaymentMandate with the payer wallet (authorization to pay).
+ */
+export async function signPaymentMandate(
+  mandate: PaymentMandate,
+  privateKey: string,
+): Promise<PaymentMandate> {
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const digest = mandateDigest({
+    id: mandate.id,
+    cartId: mandate.cartId,
+    intentId: mandate.intentId,
+    amount: mandate.amount,
+    currency: mandate.currency,
+    payerAddress: mandate.payerAddress,
+    payeeAddress: mandate.payeeAddress,
+    network: mandate.network,
+  });
+
+  const signature = await account.signMessage({ message: digest });
+  return { ...mandate, signature, authorizedBy: account.address };
 }
 
 // ─── Factory Functions ──────────────────────────────────────

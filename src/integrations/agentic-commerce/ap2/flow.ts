@@ -9,6 +9,9 @@ import {
   createIntentMandate,
   createCartMandate,
   createPaymentMandate,
+  signIntentMandate,
+  signCartMandate,
+  signPaymentMandate,
 } from "./mandates.js";
 import type { IntentMandate, CartMandate, PaymentMandate } from "./mandates.js";
 import {
@@ -43,10 +46,12 @@ export class AP2Flow {
   private readonly buyer: X402Buyer;
   private readonly tracker: SpendTracker;
   private readonly records: AP2TransactionRecord[] = [];
+  private readonly privateKey?: string;
 
-  constructor(buyer: X402Buyer, tracker: SpendTracker) {
+  constructor(buyer: X402Buyer, tracker: SpendTracker, privateKey?: string) {
     this.buyer = buyer;
     this.tracker = tracker;
+    this.privateKey = privateKey;
   }
 
   /**
@@ -57,9 +62,9 @@ export class AP2Flow {
     console.log(`\n[AP2] === Starting AP2 Purchase Flow ===`);
     console.log(`[AP2] Description: ${params.description}`);
 
-    // Step 1: Create IntentMandate
+    // Step 1: Create IntentMandate (signed if private key available)
     console.log(`[AP2] Step 1: Creating IntentMandate...`);
-    const intent = createIntentMandate({
+    let intent = createIntentMandate({
       agentId: this.buyer.address,
       description: params.description,
       maxBudget: params.expectedPrice,
@@ -67,6 +72,10 @@ export class AP2Flow {
       requiresConfirmation: params.requiresConfirmation,
       signedBy: this.buyer.address,
     });
+    if (this.privateKey) {
+      intent = await signIntentMandate(intent, this.privateKey);
+      console.log(`[AP2] Intent signed: ${intent.signature?.slice(0, 20)}...`);
+    }
     console.log(`[AP2] Intent created: ${intent.id}`);
 
     // Step 2: Simulate merchant cart response
@@ -98,7 +107,11 @@ export class AP2Flow {
       );
     }
 
-    const payment = createPaymentMandate(cart, this.buyer.address);
+    let payment = createPaymentMandate(cart, this.buyer.address);
+    if (this.privateKey) {
+      payment = await signPaymentMandate(payment, this.privateKey);
+      console.log(`[AP2] Payment signed: ${payment.signature?.slice(0, 20)}...`);
+    }
     console.log(`[AP2] Payment authorized: ${payment.id}`);
 
     // Step 4: Execute x402 payment via buyer

@@ -11,6 +11,7 @@ import { SpendTracker } from "../../x402/tracker.js";
 import { startDemoServices, stopDemoServices } from "../server.js";
 import { getServiceUrls } from "../../x402/seller.js";
 import { verifyTransactions, formatVerificationReport } from "../verify.js";
+import { AgentIdentityManager } from "../../identity/erc8004.js";
 
 export async function runTrack1(): Promise<string> {
   const output: string[] = [];
@@ -34,6 +35,21 @@ export async function runTrack1(): Promise<string> {
 
   log(`Agent wallet: ${buyer.address}`);
   log(`Budget: $${buyer.getRemainingBudget().toFixed(2)} USDC daily`);
+  log(``);
+
+  // ─── ERC-8004 Identity Registration ─────────────────────
+  log(`━━━ ERC-8004 Agent Identity ━━━`);
+  const identity = new AgentIdentityManager(agentKey);
+  const agentId = await identity.register({
+    name: "Wispy Commerce Agent",
+    description: "Autonomous AI agent that discovers, pays for, and consumes paid APIs using x402 protocol",
+    capabilities: ["x402-payments", "ap2-mandates", "bite-encryption", "defi-trading", "a2a-delegation"],
+  });
+  log(`  Address: ${agentId.address}`);
+  log(`  On-chain: ${agentId.onChain ? `Yes (ID: ${agentId.agentId})` : "Local signed identity"}`);
+  log(`  Proof signature: ${agentId.identityProof.signature.slice(0, 40)}...`);
+  log(`  Capabilities: ${agentId.registrationFile.capabilities.join(", ")}`);
+  log(`  Services: ${agentId.registrationFile.services.map((s) => s.type).join(", ")}`);
   log(``);
 
   try {

@@ -20,6 +20,7 @@ import { DeFiAgent } from "./defi/swap.js";
 import { EncryptedCommerce } from "./bite/encrypted-tx.js";
 import type { EncryptedPayment } from "./bite/encrypted-tx.js";
 import type { PaymentCondition } from "./bite/conditional.js";
+import { AgentIdentityManager } from "./identity/erc8004.js";
 
 export default class AgenticCommerceIntegration extends Integration {
   readonly manifest: IntegrationManifest = {
@@ -285,7 +286,7 @@ export default class AgenticCommerceIntegration extends Integration {
     this.buyer = new X402Buyer({ privateKey });
     this.tracker = new SpendTracker(this.buyer.address);
     this.buyer.setTracker(this.tracker);
-    this.ap2Flow = new AP2Flow(this.buyer, this.tracker);
+    this.ap2Flow = new AP2Flow(this.buyer, this.tracker, privateKey);
     this.riskEngine = new RiskEngine();
     this.defiAgent = new DeFiAgent(privateKey, this.riskEngine, this.tracker);
     this.encryptedCommerce = new EncryptedCommerce(undefined, privateKey);

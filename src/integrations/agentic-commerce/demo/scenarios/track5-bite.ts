@@ -33,6 +33,20 @@ export async function runTrack5(privateKey?: string): Promise<string> {
     `On-chain: ${privateKey ? "YES — will submit encrypted txs to SKALE" : "NO — demo mode (no private key)"}\n`,
   );
 
+  // ─── BLS Committee Info ─────────────────────────────────
+  log(`━━━ BLS Threshold Encryption Committee ━━━`);
+  log(`  Querying SKALE validator committee for BLS public keys...`);
+  const committees = await bite.getCommitteesInfo();
+  if (committees.length > 0) {
+    for (const c of committees) {
+      log(`  Epoch ${c.epochId}: BLS public key ${c.commonBLSPublicKey.slice(0, 48)}...`);
+    }
+    log(`  ${committees.length} committee(s) active — 2t+1 validators needed for decryption.`);
+  } else {
+    log(`  Committee info unavailable (SDK limitation). Encryption still functional.`);
+  }
+  log(``);
+
   // ─── Demo 1: Encrypted USDC Transfer ───────────────────
   log(`━━━ Demo 1: Encrypted USDC Transfer ━━━`);
   log(`  Encrypting a $0.01 USDC transfer with BITE threshold encryption.`);
