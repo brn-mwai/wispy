@@ -32,7 +32,7 @@
 
 > **Hackathon**: [SF Agentic Commerce x402](https://dorahacks.io/hackathon/x402) | **Dates**: Feb 11–14, 2026 | **Prize Pool**: $50,000
 >
-> **Team**: [Hausor Labs](https://hausorlabs.com) — Brian Mwai, Joy C. Langat
+> **Team**: [Hausor Labs](https://hausorlabs.tech) — Brian Mwai, Joy C. Langat
 
 ---
 
@@ -321,7 +321,7 @@ The agentic commerce integration plugs into this platform as a first-class integ
 ---
 
 <p align="center">
-  <strong>Wispy</strong> is built by <a href="https://hausorlabs.com">Hausor Labs</a>
+  <strong>Wispy</strong> is built by <a href="https://hausorlabs.tech">Hausor Labs</a>
 </p>
 
 <p align="center">
