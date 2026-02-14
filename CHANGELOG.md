@@ -7,13 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] — 2026-02-14 — x402 Hackathon Submission
+
+### Added
+
+#### Agentic Commerce Integration (`src/integrations/agentic-commerce/`)
+- Complete autonomous agent commerce system on SKALE BITE V2 Sandbox
+- 25 TypeScript files, 4,470 lines of code, 46 tests — all passing
+- 11 new agent tools registered into Wispy's tool system
+- Targets all 5 tracks of the SF Agentic Commerce x402 Hackathon
+
+#### Track 1 — Overall Best Agent
+- End-to-end commerce lifecycle: discover paid API → evaluate ROI → pay → deliver → audit
+- Agent autonomously chains multiple paid API calls to complete complex tasks
+- Full audit trail with per-call spend tracking and daily ledger
+
+#### Track 2 — x402 Tool Usage
+- `x402/buyer.ts`: HTTP 402 detection, EIP-3009 signed USDC authorization, retry with payment proof
+- `x402/seller.ts`: mock x402 seller endpoints with configurable pricing
+- `x402/tracker.ts`: per-call spend tracking, daily budget enforcement, audit trail
+- Commerce policy engine: per-transaction limits, daily caps, auto-approve thresholds
+
+#### Track 3 — AP2 Integration
+- `ap2/mandates.ts`: Intent → Cart → Payment → Receipt mandate objects
+- `ap2/receipts.ts`: payment receipts with transaction records
+- `ap2/flow.ts`: AP2 orchestration engine with failure handling and rollback
+
+#### Track 4 — DeFi Agent
+- `defi/swap.ts`: Algebra DEX integration (SwapRouter + QuoterV2 price quotes)
+- Subgraph queries for pool discovery and market research
+- On-chain pool checks via `AlgebraFactory.poolByPair()`
+- Direct USDC transfer fallback when no liquidity pools exist
+- `defi/risk-engine.ts`: position limits, volatility checks, slippage controls
+
+#### Track 5 — Encrypted Agents (BITE v2)
+- `bite/encrypted-tx.ts`: BLS threshold encryption of transaction `to` + `data` fields
+- On-chain submission to SKALE BITE magic address
+- Decryption verification via `bite_getDecryptedTransactionData` RPC
+- `bite/conditional.ts`: conditional execution — time-lock, delivery-proof, oracle gates
+
+#### Demo Infrastructure
+- `demo/server.ts`: launches 4 mock x402 services on ports 4021–4024
+- `demo/runner.ts`: runs all 5 track demos end-to-end
+- `demo/verify.ts`: on-chain verification utilities
+- 5 track-specific demo scenarios with detailed output
+
+#### Configuration & Contracts
+- SKALE BITE V2 Sandbox chain config (Chain ID: 103698795)
+- Algebra DEX contract addresses (11 contracts)
+- Full ABIs: SwapRouter, QuoterV2, Factory, ERC-20
+- viem chain definition, service pricing, commerce policy defaults
+
+### Changed
+- Registered agentic-commerce integration in loader
+- Fixed Gemini tool schema compatibility for commerce tool parameters
+- Updated agent prompt system for commerce-aware behavior
+
+---
+
+## [1.3.0] — 2026-02-07
+
+### Added
+- Documentation links to docs.wispy.cc across README
+
+### Changed
+- Updated README with agentic commerce features overview
+- Version bump to 1.3.0
+
+---
+
 ## [1.2.0] — 2026-02-07
 
 ### Added
 
-#### Claude Code-Style CLI Overhaul
+#### CLI Overhaul
 - New `OutputRenderer` class with markdown-aware terminal rendering (`src/cli/tui/output-renderer.ts`)
-- Claude Code-style tool call display with `⏺` markers, Title Case names, indented args, and duration badges (`src/cli/ui/tool-display.ts`)
+- Structured tool call display with `⏺` markers, Title Case names, indented args, and duration badges (`src/cli/ui/tool-display.ts`)
 - Status bar wired into REPL — shows tokens, cost, session, and context usage between responses
 - Structured response lifecycle: thinking → tool calls → formatted markdown → stats line
 - Connected CLI mode via WebSocket — attach multiple CLIs to a running gateway (`src/cli/connected-repl.ts`)
@@ -289,6 +358,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlight |
 |---------|------|-----------|
+| **1.4.0** | **2026-02-14** | **x402 Hackathon: Agentic Commerce on SKALE (all 5 tracks, 46 tests)** |
+| 1.3.0 | 2026-02-07 | docs.wispy.cc links, README updates |
 | 1.2.0 | 2026-02-07 | CLI overhaul, Antigravity channel, multimodal, model switching, x402scan |
 | 1.0.0 | 2026-02-06 | Public REST API, cross-platform installers, production release |
 | 0.7.0 | 2026-01-30 | Gemini 3 thinking levels, x402, ERC-8004, A2A protocols |
@@ -307,5 +378,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Website**: [wispy.cc](https://wispy.cc)
 - **npm**: [npmjs.com/package/wispy-ai](https://www.npmjs.com/package/wispy-ai)
-- **GitHub**: [github.com/brn-mwai/wispy](https://github.com/brn-mwai/wispy)
-- **Issues**: [github.com/brn-mwai/wispy/issues](https://github.com/brn-mwai/wispy/issues)
+- **GitHub**: [github.com/hausorlabs/wispy](https://github.com/hausorlabs/wispy)
+- **Issues**: [github.com/hausorlabs/wispy/issues](https://github.com/hausorlabs/wispy/issues)
+- **Hackathon**: [dorahacks.io/hackathon/x402](https://dorahacks.io/hackathon/x402)
