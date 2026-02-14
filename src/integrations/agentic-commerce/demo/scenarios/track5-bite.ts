@@ -13,6 +13,7 @@
 
 import { EncryptedCommerce } from "../../bite/encrypted-tx.js";
 import { encodeFunctionData } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { ERC20_ABI, SKALE_BITE_SANDBOX } from "../../config.js";
 
 export async function runTrack5(privateKey?: string): Promise<string> {
@@ -53,11 +54,16 @@ export async function runTrack5(privateKey?: string): Promise<string> {
   log(`  The 'to' and 'data' fields will be BLS-encrypted — invisible in mempool.`);
   log(``);
 
+  // When live, self-transfer to avoid losing funds to a hardcoded address
+  const demoRecipient = privateKey
+    ? privateKeyToAccount(privateKey as `0x${string}`).address
+    : ("0x742d35Cc6634C0532925a3b844Bc9e7595f2bD28" as `0x${string}`);
+
   const transferData = encodeFunctionData({
     abi: ERC20_ABI,
     functionName: "transfer",
     args: [
-      "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD28" as `0x${string}`,
+      demoRecipient,
       BigInt(10_000), // $0.01 USDC (6 decimals)
     ],
   });

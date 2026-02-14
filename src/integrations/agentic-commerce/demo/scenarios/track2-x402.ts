@@ -9,18 +9,22 @@ import { X402Buyer } from "../../x402/buyer.js";
 import { SpendTracker } from "../../x402/tracker.js";
 import { startDemoServices, stopDemoServices } from "../server.js";
 import { getServiceUrls } from "../../x402/seller.js";
+import { verifyTransactions, formatVerificationReport } from "../verify.js";
+import { SKALE_BITE_SANDBOX } from "../../config.js";
 
-export async function runTrack2(): Promise<string> {
+export async function runTrack2(privateKey?: string): Promise<string> {
   const output: string[] = [];
   const log = (msg: string) => {
     console.log(msg);
     output.push(msg);
   };
 
+  const isLive = !!privateKey;
   log(`\n━━━ Track 2: Agentic Tool Usage on x402 ━━━\n`);
+  log(`Mode: ${isLive ? "LIVE (real USDC payments via Kobaru)" : "SIMULATION (fresh wallet)"}`);
   log(`Demonstrating: chained x402 calls, budget checking, cost reasoning, spend logs.\n`);
 
-  const agentKey = generatePrivateKey();
+  const agentKey = (privateKey ?? generatePrivateKey()) as `0x${string}`;
   const { sellerAddress } = await startDemoServices();
   const urls = getServiceUrls();
 
@@ -110,6 +114,22 @@ export async function runTrack2(): Promise<string> {
     log(buyer.getBudgetStatus());
     log(``);
 
+    // On-chain verification
+    const txHashes = buyer
+      .getPaymentHistory()
+      .filter((e) => e.status === "success" && e.txHash)
+      .map((e) => e.txHash!);
+
+    if (txHashes.length > 0) {
+      log(`━━━ On-Chain Verification ━━━`);
+      const verification = await verifyTransactions(txHashes);
+      log(formatVerificationReport(verification));
+      for (const r of verification.results.filter((r) => r.confirmed)) {
+        log(`  Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.hash}`);
+      }
+      log(``);
+    }
+
     log(`[Track 2] COMPLETE: 3 chained x402 calls, EIP-3009 signatures, budget awareness, spend logs.\n`);
   } catch (err) {
     log(`\n[Track 2] Error: ${(err as Error).message}\n`);
@@ -121,5 +141,5 @@ export async function runTrack2(): Promise<string> {
 }
 
 if (process.argv[1]?.includes("track2")) {
-  runTrack2().catch(console.error);
+  runTrack2(process.env.AGENT_PRIVATE_KEY).catch(console.error);
 }

@@ -5,30 +5,33 @@
  * guardrail enforcement (denial with reason codes).
  */
 
-import { generatePrivateKey } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { SpendTracker } from "../../x402/tracker.js";
 import { RiskEngine } from "../../defi/risk-engine.js";
 import { DeFiAgent } from "../../defi/swap.js";
 
-export async function runTrack4(): Promise<string> {
+export async function runTrack4(privateKey?: string): Promise<string> {
   const output: string[] = [];
   const log = (msg: string) => {
     console.log(msg);
     output.push(msg);
   };
 
+  const isLive = !!privateKey;
   log(`\n━━━ Track 4: Best Trading / DeFi Agent ━━━\n`);
+  log(`Mode: ${isLive ? "LIVE (real on-chain swaps)" : "SIMULATION (fresh wallet)"}`);
   log(`Demonstrating: multi-source research, risk evaluation, swap execution, guardrail enforcement.\n`);
 
-  const agentKey = generatePrivateKey();
+  const agentKey = (privateKey ?? generatePrivateKey()) as `0x${string}`;
+  const agentAddress = privateKeyToAccount(agentKey).address;
   const riskEngine = new RiskEngine({
-    maxPositionSize: 0.5,
+    maxPositionSize: isLive ? 0.005 : 0.5,
     maxSlippageBps: 100,
-    dailyLossLimit: 2.0,
+    dailyLossLimit: isLive ? 0.02 : 2.0,
     requireHumanApproval: false,
     cooldownMs: 0, // No cooldown for demo
   });
-  const tracker = new SpendTracker("0x" + "0".repeat(40));
+  const tracker = new SpendTracker(agentAddress);
   const defi = new DeFiAgent(agentKey, riskEngine, tracker);
 
   log(`Risk Profile:`);
@@ -49,11 +52,12 @@ export async function runTrack4(): Promise<string> {
   log(``);
 
   // Trade 1: Small swap within limits (should be approved)
+  const trade1Amount = isLive ? "0.001" : "0.1";
   log(`━━━ Trade 1: Small Swap (Within Limits) ━━━`);
   const swap1 = await defi.swap({
     fromToken: "USDC",
     toToken: "ETH",
-    amount: "0.1",
+    amount: trade1Amount,
     reasoning: `Research shows ${research.change24h > 0 ? "positive" : "mixed"} movement. Small position to test market.`,
   });
   log(`  Decision: ${swap1.decision.approved ? "APPROVED" : "DENIED"}`);
@@ -81,11 +85,12 @@ export async function runTrack4(): Promise<string> {
   log(``);
 
   // Trade 3: Another small swap (should be approved)
+  const trade3Amount = isLive ? "0.002" : "0.2";
   log(`━━━ Trade 3: Adjusted Swap (Within Limits) ━━━`);
   const swap3 = await defi.swap({
     fromToken: "USDC",
     toToken: "ETH",
-    amount: "0.2",
+    amount: trade3Amount,
     reasoning: "Reduced position size after previous denial. Risk-adjusted entry.",
   });
   log(`  Decision: ${swap3.decision.approved ? "APPROVED" : "DENIED"}`);
@@ -108,5 +113,5 @@ export async function runTrack4(): Promise<string> {
 }
 
 if (process.argv[1]?.includes("track4")) {
-  runTrack4().catch(console.error);
+  runTrack4(process.env.AGENT_PRIVATE_KEY).catch(console.error);
 }

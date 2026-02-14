@@ -10,18 +10,22 @@ import { SpendTracker } from "../../x402/tracker.js";
 import { AP2Flow } from "../../ap2/flow.js";
 import { startDemoServices, stopDemoServices } from "../server.js";
 import { getServiceUrls } from "../../x402/seller.js";
+import { verifyTransactions, formatVerificationReport } from "../verify.js";
+import { SKALE_BITE_SANDBOX } from "../../config.js";
 
-export async function runTrack3(): Promise<string> {
+export async function runTrack3(privateKey?: string): Promise<string> {
   const output: string[] = [];
   const log = (msg: string) => {
     console.log(msg);
     output.push(msg);
   };
 
+  const isLive = !!privateKey;
   log(`\n━━━ Track 3: Best Integration of AP2 ━━━\n`);
+  log(`Mode: ${isLive ? "LIVE (real USDC payments via Kobaru)" : "SIMULATION (fresh wallet)"}`);
   log(`Demonstrating: structured authorization flow with mandates + receipts.\n`);
 
-  const agentKey = generatePrivateKey();
+  const agentKey = (privateKey ?? generatePrivateKey()) as `0x${string}`;
   const { sellerAddress } = await startDemoServices();
   const urls = getServiceUrls();
 
@@ -31,7 +35,7 @@ export async function runTrack3(): Promise<string> {
   const ap2 = new AP2Flow(buyer, tracker, agentKey);
 
   log(`Agent wallet: ${buyer.address}`);
-  log(`Mandate signing: ENABLED (EIP-191 personal message signatures)\n`);
+  log(`Mandate signing: ${isLive ? "ENABLED (EIP-191 funded wallet)" : "ENABLED (EIP-191 ephemeral key)"}\n`);
 
   try {
     // Purchase 1: Weather data (success)
@@ -82,6 +86,22 @@ export async function runTrack3(): Promise<string> {
     log(ap2.formatAuditTrail());
     log(``);
 
+    // On-chain verification
+    const txHashes = buyer
+      .getPaymentHistory()
+      .filter((e) => e.status === "success" && e.txHash)
+      .map((e) => e.txHash!);
+
+    if (txHashes.length > 0) {
+      log(`━━━ On-Chain Verification ━━━`);
+      const verification = await verifyTransactions(txHashes);
+      log(formatVerificationReport(verification));
+      for (const r of verification.results.filter((r) => r.confirmed)) {
+        log(`  Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.hash}`);
+      }
+      log(``);
+    }
+
     log(`[Track 3] COMPLETE: 2 successful AP2 purchases + 1 graceful failure. Full mandate chain + receipts.\n`);
   } catch (err) {
     log(`\n[Track 3] Error: ${(err as Error).message}\n`);
@@ -93,5 +113,5 @@ export async function runTrack3(): Promise<string> {
 }
 
 if (process.argv[1]?.includes("track3")) {
-  runTrack3().catch(console.error);
+  runTrack3(process.env.AGENT_PRIVATE_KEY).catch(console.error);
 }

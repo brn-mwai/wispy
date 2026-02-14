@@ -12,20 +12,23 @@ import { startDemoServices, stopDemoServices } from "../server.js";
 import { getServiceUrls } from "../../x402/seller.js";
 import { verifyTransactions, formatVerificationReport } from "../verify.js";
 import { AgentIdentityManager } from "../../identity/erc8004.js";
+import { SKALE_BITE_SANDBOX } from "../../config.js";
 
-export async function runTrack1(): Promise<string> {
+export async function runTrack1(privateKey?: string): Promise<string> {
   const output: string[] = [];
   const log = (msg: string) => {
     console.log(msg);
     output.push(msg);
   };
 
+  const isLive = !!privateKey;
   log(`\n━━━ Track 1: Overall Best Agentic App ━━━\n`);
+  log(`Mode: ${isLive ? "LIVE (real USDC payments via Kobaru)" : "SIMULATION (fresh wallet)"}`);
   log(`Scenario: Agent receives task "Research Nairobi weather and market sentiment, compile a report"`);
   log(`The agent must autonomously discover, pay for, and chain 3 API calls.\n`);
 
   // Setup
-  const agentKey = generatePrivateKey();
+  const agentKey = (privateKey ?? generatePrivateKey()) as `0x${string}`;
   const { sellerAddress } = await startDemoServices();
   const urls = getServiceUrls();
 
@@ -117,6 +120,9 @@ export async function runTrack1(): Promise<string> {
       log(`━━━ On-Chain Verification ━━━`);
       const verification = await verifyTransactions(txHashes);
       log(formatVerificationReport(verification));
+      for (const r of verification.results.filter((r) => r.confirmed)) {
+        log(`  Explorer: ${SKALE_BITE_SANDBOX.explorerUrl}/tx/${r.hash}`);
+      }
     }
 
     log(`\n[Track 1] COMPLETE: 3 x402 payments, full audit trail, chained workflow.\n`);
@@ -132,5 +138,5 @@ export async function runTrack1(): Promise<string> {
 
 // CLI entry
 if (process.argv[1]?.includes("track1")) {
-  runTrack1().catch(console.error);
+  runTrack1(process.env.AGENT_PRIVATE_KEY).catch(console.error);
 }

@@ -45,8 +45,8 @@ export type FailureReason =
 export class AP2Flow {
   private readonly buyer: X402Buyer;
   private readonly tracker: SpendTracker;
-  private readonly records: AP2TransactionRecord[] = [];
   private readonly privateKey?: string;
+  private readonly records: AP2TransactionRecord[] = [];
 
   constructor(buyer: X402Buyer, tracker: SpendTracker, privateKey?: string) {
     this.buyer = buyer;

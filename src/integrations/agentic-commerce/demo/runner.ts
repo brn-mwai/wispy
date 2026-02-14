@@ -12,6 +12,7 @@ import { runTrack2 } from "./scenarios/track2-x402.js";
 import { runTrack3 } from "./scenarios/track3-ap2.js";
 import { runTrack4 } from "./scenarios/track4-defi.js";
 import { runTrack5 } from "./scenarios/track5-bite.js";
+import { runPreflight } from "./preflight.js";
 
 interface TrackResult {
   track: number;
@@ -23,22 +24,39 @@ interface TrackResult {
 }
 
 async function runAllTracks(): Promise<void> {
+  const agentKey = process.env.AGENT_PRIVATE_KEY;
+
+  // Pre-flight balance check
+  const preflight = await runPreflight(agentKey);
+
   console.log(`
 ╔══════════════════════════════════════════════════╗
 ║  WISPY x402 AGENTIC COMMERCE — FULL DEMO        ║
 ║  SF Agentic Commerce x402 Hackathon (SKALE)      ║
-║  All 5 Tracks                                    ║
+║  All 5 Tracks  |  Mode: ${preflight.mode.toUpperCase().padEnd(22)}║
 ╚══════════════════════════════════════════════════╝
 `);
+
+  console.log(`  Agent:  ${preflight.address}`);
+  if (preflight.mode === "live") {
+    console.log(`  sFUEL:  ${preflight.sFuelBalance}`);
+    console.log(`  USDC:   $${preflight.usdcBalance.toFixed(6)}`);
+  }
+  for (const w of preflight.warnings) console.log(`  [WARN] ${w}`);
+  if (preflight.mode === "live" && !preflight.ready) {
+    console.error("\n  Insufficient balance. Aborting.\n");
+    process.exit(1);
+  }
+  console.log(``);
 
   const results: TrackResult[] = [];
 
   const tracks: Array<{ num: number; name: string; run: () => Promise<string> }> = [
-    { num: 1, name: "Overall Best Agentic App", run: runTrack1 },
-    { num: 2, name: "Agentic Tool Usage on x402", run: runTrack2 },
-    { num: 3, name: "Best Integration of AP2", run: runTrack3 },
-    { num: 4, name: "Best Trading / DeFi Agent", run: runTrack4 },
-    { num: 5, name: "Encrypted Agents (BITE v2)", run: runTrack5 },
+    { num: 1, name: "Overall Best Agentic App", run: () => runTrack1(agentKey) },
+    { num: 2, name: "Agentic Tool Usage on x402", run: () => runTrack2(agentKey) },
+    { num: 3, name: "Best Integration of AP2", run: () => runTrack3(agentKey) },
+    { num: 4, name: "Best Trading / DeFi Agent", run: () => runTrack4(agentKey) },
+    { num: 5, name: "Encrypted Agents (BITE v2)", run: () => runTrack5(agentKey) },
   ];
 
   for (const track of tracks) {
